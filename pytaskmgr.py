@@ -180,7 +180,7 @@ class MainWindow(tk.Frame):
         [f'CPU #{i} power' for i in range(OpenHardWareMonitor.get_cpu_sizes('Power')-1)]
     _NAME: List[str] = [
         'AC status','Battery',
-        'Battery status','CPU temperture'
+        'Battery status','CPU temperature'
         ]+\
             _CPU_STATUS_NAME+_CPU_STATUS_NAME_C+_CPU_STATUS_NAME_W+\
         [
@@ -252,7 +252,7 @@ class MainWindow(tk.Frame):
                 self._FMT.append('')
             elif name in ['WiFi usage (In)', 'WiFi usage (Out)']:
                 self._FMT.append('KB/s')
-            elif name == 'CPU temperture':
+            elif name == 'CPU temperature':
                 self._FMT.append('°C')
             elif name in self._CPU_STATUS_NAME_W:
                 self._FMT.append('W')
@@ -310,10 +310,10 @@ class MainWindow(tk.Frame):
 
         # CPU温度
         try:
-            temperture = [self.ohm_status['Temperature'][0]]
+            temperature = [self.ohm_status['Temperature'][0]]
         except KeyError:
             # 無ければ-1
-            temperture = [-1.]
+            temperature = [-1.]
 
         # cpu使用率
         processes_cpu = [psutil.cpu_percent()] + psutil.cpu_percent(percpu=True)
@@ -339,7 +339,7 @@ class MainWindow(tk.Frame):
         WIFI_RECV = cur_recv
         wifi_stat = [sent_ps, resc_ps]
 
-        return battery_info + temperture + processes_cpu + others + wifi_stat
+        return battery_info + temperature + processes_cpu + others + wifi_stat
 
     def make_table(self) -> None:
         """テーブルを作成"""
