@@ -301,7 +301,7 @@ class MainWindow(tk.Frame):
         bres = self.get_battery_status()
         battery_info = [
             self._AC_STATUS[bres['ACLineStatus']],
-            psutil.sensors_battery().percent if self.has_battery else -1.,
+            int(psutil.sensors_battery().percent) if self.has_battery else -1,
             self._BATTERY_FLAG[bres['BatteryFlag']],
         ]
 
@@ -401,9 +401,18 @@ class MainWindow(tk.Frame):
         if isinstance(proc, float) and not name in exclude:
             if proc > 100.:
                 proc = 100.
-            percent = proc/100. if name == 'Battery' else (1.-proc/100.)
+            percent = 1.-proc/100.
             p = round(color_max * percent)
             cl = '#{:0>2X}{:>02X}{:>02X}'.format(color_max, p, p)
+        elif name == 'Battery' and proc != -1:
+            threth_check = lambda x: 0xff if x > 0xff else x
+            if proc > 100:
+                proc = 100
+            percent = 1.-proc/100.
+            p = round(color_max * percent)
+            rc = color_max if p < 0x80 else threth_check(round((-0x83*p + 0xc001)/0x7f))
+            gc = threth_check(round((-0x03*p + 0x8001)/0x7f)) if p > 0x80 else 2*p
+            cl = '#{:0>2X}{:>02X}{:>02X}'.format(rc, gc, 0)
         elif name == 'AC status' and proc != 'Unknown':
             if proc == 'Offline':
                 cl = '#ffff00'
@@ -417,7 +426,7 @@ class MainWindow(tk.Frame):
             elif proc in ['Low', 'Charging(Low)']:
                 cl = '#ffff00'
             elif proc in ['Critical', 'Charging(Critical)']:
-                cl = '#df0000'
+                cl = '#ff0000'
         else:
             cl = 'white'
         self.tree.tag_configure(tagname=tag, foreground=cl)
