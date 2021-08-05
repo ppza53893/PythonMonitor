@@ -408,7 +408,7 @@ class MainWindow(tk.Frame):
             threth_check = lambda x: 0xff if x > 0xff else x
             if proc > 100:
                 proc = 100
-            percent = 1.-proc/100.
+            percent = proc/100.
             p = round(color_max * percent)
             rc = color_max if p < 0x80 else threth_check(round((-0x83*p + 0xc001)/0x7f))
             gc = threth_check(round((-0x03*p + 0x8001)/0x7f)) if p > 0x80 else 2*p
