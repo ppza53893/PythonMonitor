@@ -175,9 +175,9 @@ class MainWindow(tk.Frame):
     _CPU_STATUS_NAME: List[str] = ['CPU usage']+\
         [f'CPU #{i+1} usage' for i in range(psutil.cpu_count())]
     _CPU_STATUS_NAME_C: List[str] = ['CPU bus'] +\
-        [f'CPU #{i} clock' for i in range(OpenHardWareMonitor.get_cpu_sizes('Clock')-1)]
-    _CPU_STATUS_NAME_W: List[str] = ['CPU power'] +\
-        [f'CPU #{i} power' for i in range(OpenHardWareMonitor.get_cpu_sizes('Power')-1)]
+        [f'CPU #{i+1} clock' for i in range(OpenHardWareMonitor.get_cpu_sizes('Clock')-1)]
+    _CPU_STATUS_NAME_W: List[str] = ['CPU power', 'CPU (cores) power'] +\
+        [f'CPU #{i+1} power' for i in range(OpenHardWareMonitor.get_cpu_sizes('Power')-2)]
     _NAME: List[str] = [
         'AC status','Battery',
         'Battery status','CPU temperature'
@@ -319,10 +319,10 @@ class MainWindow(tk.Frame):
         processes_cpu = [psutil.cpu_percent()] + psutil.cpu_percent(percpu=True)
 
         # クロック周波数
-        processes_cpu += [p for p in self.ohm_status['Power'].values()]
+        processes_cpu += [p for p in self.ohm_status['Clock'].values()]
 
         # 電力
-        processes_cpu += [p for p in self.ohm_status['Clock'].values()]
+        processes_cpu += [p for p in self.ohm_status['Power'].values()]
 
         # その他
         others = [
@@ -558,7 +558,7 @@ def main() -> None:
             'Treeview',
             foreground=[Elm for Elm in style.map("Treeview", query_opt='foreground') if Elm[:2] != ("!disabled", "!selected")]
             )
-        MainWindow(window, 300, 264)
+        MainWindow(window, 340, 264)
         window.mainloop()
     except:
         pass
