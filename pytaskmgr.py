@@ -7,7 +7,7 @@ import sys
 import tkinter as tk
 import tkinter.ttk as ttk
 from ctypes.wintypes import BOOL, BYTE, DWORD
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Optional
 
 import clr
 import plyer
@@ -15,7 +15,7 @@ import psutil
 import ttkthemes
 
 TASKMGR_PATH = os.path.split(os.path.abspath(__file__))[0]
-ICON = r'C:\ProgramData\Anaconda3\Menu\anaconda-navigator.ico'
+ICON = None
 
 clr.AddReference('System.Windows.Forms')
 clr.AddReference(os.path.join(TASKMGR_PATH,'OpenHardwareMonitorLib'))
@@ -41,12 +41,12 @@ def show_notification(
     title: str,
     message: str,
     app_name: str = 'PyTaskManager',
-    app_icon: str = ICON,
+    app_icon: Optional[str] = ICON,
     timeout: int = 10,
     **kwargs):
     """Windowsの通知を出す"""
 
-    if app_icon != '' and not os.path.exists(app_icon):
+    if app_icon is None or not os.path.exists(app_icon):
         app_icon = ''
 
     plyer.notification.notify(
@@ -79,11 +79,12 @@ class _OpenHardWareMonitor(object):
         'Fan','Flow',
         'Control','Level',
         'Factor','Power',
-        'Data','SmallData']
+        'Data','SmallData',
+        'Throughput']
     _sensortypeformat: List[str] = [
         'V','MHz','deg','%',
         'RPM','L/h','%','%',
-        '','W','GB','GB'
+        '','W','GB','GB','MB/s'
     ]
     _sensor_dict: Dict[str, str] = dict(zip(_sensortypes, _sensortypeformat))
 
@@ -116,7 +117,14 @@ class _OpenHardWareMonitor(object):
 
     def parse_sensor(self, sensor, full: bool) -> None:
         key = self._hwtypes[sensor.Hardware.HardwareType]
-        stype = self._sensortypes[sensor.SensorType]
+        try:
+            stype = self._sensortypes[sensor.SensorType]
+        except KeyError:
+            stype = str(sensor.Identifier).split('/')[-2].capitalize()
+            self._sensor_dict = dict(
+                **self._sensor_dict,
+                **{stype: ''}
+            )
         if key not in self.status.keys():
             self.status[key] = {}
         if full:
@@ -126,6 +134,7 @@ class _OpenHardWareMonitor(object):
             if stype not in self.status[key][name].keys():
                 self.status[key][name][stype] = {}
             self.status[key][name][stype][sensor.Index] = {
+                'Identifier': str(sensor.Identifier),
                 'Value': sensor.Value,
                 'Min': sensor.Min,
                 'Max': sensor.Max,
@@ -199,7 +208,7 @@ class MainWindow(tk.Frame):
         9: 'Charging(High)',
         10: 'Chargin(Low)',
         12: 'Charging(Critical)',
-        128: 'Undefind',
+        128: 'Undefined'
     }
     BATTERY_ALERT_MIN: int = 35
     BATTERY_ALERT_MAX: int = 95
@@ -225,7 +234,8 @@ class MainWindow(tk.Frame):
         # masterの設定
         self.set_position()
         self.master.overrideredirect(True)
-        self.master.iconbitmap(ICON)
+        if ICON is not None and os.path.exists(ICON):
+            self.master.iconbitmap(ICON)
         self.master.bind('<Control-Key-q>', self.app_exit)
         self.master.bind('<Control-Key-p>', self.switch_topmost)
         self.master.bind('<Control-Key-s>', self.dump_current_status)
@@ -233,8 +243,8 @@ class MainWindow(tk.Frame):
         self.master.bind('<Control-Key-m>', self.move_d)
         self.master.bind('<Control-Key-j>', self.move_l)
         self.master.bind('<Control-Key-l>', self.move_r)
-        self.master.bind('<Control-Key-t>', self.switch_window_transparency)
-        self.master.bind('<Control-Key-c>', self.switch_cycle)
+        self.master.bind('<Control-Key-r>', self.switch_window_transparency)
+        self.master.bind('<Control-Key-b>', self.switch_cycle)
         self.master.title('Process')
         self.master.attributes("-topmost", self.showtop)
         self.master.resizable(width=False, height=False)
@@ -284,15 +294,14 @@ class MainWindow(tk.Frame):
         for field, _ in status._fields_:
             if field == 'BatteryFlag':
                 st = getattr(status, field)
-                if st & 8 ==0 and st & 128 != 0:
+                if st < 0 or (st & 8 ==0 and st & 128 != 0):
                     field_set = 128
                 else:
                     field_set = st
                 ret[field] = field_set
             else:
                 ret[field] = getattr(status, field)
-        res = dict((field, getattr(status, field)) for field, _ in status._fields_)
-        return res
+        return ret
 
     def get_status(self) -> List[Union[str, int]]:
         """
@@ -414,7 +423,7 @@ class MainWindow(tk.Frame):
             percent = proc/100.
             p = round(color_max * percent)
             rc = color_max if p < 0x80 else threth_check(round((-0x83*p + 0xc001)/0x7f))
-            gc = threth_check(round((-0x03*p + 0x8001)/0x7f)) if p > 0x80 else threth_check(2*p)
+            gc = threth_check(round((-0x03*p + 0x8001)/0x7f) if p > 0x80 else 2*p)
             cl = '#{:0>2X}{:>02X}{:>02X}'.format(rc, gc, 0)
         elif name == 'AC status' and proc != 'Unknown':
             if proc == 'Offline':
