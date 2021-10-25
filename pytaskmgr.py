@@ -54,6 +54,14 @@ class MainWindow(ttk.Frame):
         self.battery_warn = False
         self.cycle = 1000 # 1s
 
+        # init cpu usage
+        self.show_hint_message()
+
+        # networks
+        self.network = cs_ops.get_networks()
+        self.wifi_sent, self.wifi_receive = self.get_wifi_usage()
+        self.time_temp = time.time()
+
         # if has battery & has nvidia gpu
         bcs = cs_ops.get_battery_status()
         unsupported = ['NoSystemBattery', 'Unknown']
@@ -84,21 +92,13 @@ class MainWindow(ttk.Frame):
 
         # option
         self.transparent = False
-        
-        # init cpu usage
-        self.cpu = cs_ops.cpu_usage()
-        self.show_hint_message()
 
-        # networks
-        self.network = cs_ops.get_networks()
-        self.wifi_sent, self.wifi_receive = self.get_wifi_usage()
-        self.time_temp = time.time()
-  
         # master
-        self.set_position()
+        self.move_u()
         # self.master.overrideredirect(True)
         if ICON is not None and os.path.exists(ICON):
             self.master.iconbitmap(ICON)
+        self.master.protocol("WM_DELETE_WINDOW", self.app_exit)
         self.master.bind('<Control-Key-q>', self.app_exit)
         self.master.bind('<Control-Key-p>', self.switch_topmost)
         self.master.bind('<Control-Key-s>', self.dump_current_status)
@@ -116,10 +116,6 @@ class MainWindow(ttk.Frame):
 
         # lock
         self.master.resizable(width=False, height=False)
-
-
-        # move to up
-        self.move_u()
 
         # 表示する単位の設定
         self.set_format()
@@ -147,7 +143,7 @@ class MainWindow(ttk.Frame):
             self.type = 'ac'
 
         self._cpu_usage: List[str] = ['CPU usage']+\
-            [f'CPU #{i+1} usage' for i in range(cs_ops.num_processors())]
+            [f'CPU #{i+1} usage' for i in range(len(self.ohm.curstatus().CPU.Load)-1)]
         self._cpu_freq: List[str] = ['CPU bus'] +\
             [f'CPU #{i+1} clock' for i in range(self.ohm.i_cpu_size('Clock')-1)]
         self._cpu_power: List[str] = ['CPU power', 'CPU (cores) power'] +\
@@ -226,7 +222,7 @@ class MainWindow(ttk.Frame):
             temperature = ['NaN']
 
         # cpu使用率
-        processes_cpu = [cpu.NextValue() for cpu in self.cpu]
+        processes_cpu = [p.container.value for p in current_status.CPU.Load]
 
         self.master.title(
             'CPU: {:>4.1f}%, Temp: {:>4.1f}°C'.format(processes_cpu[0], temperature[0]))
@@ -544,10 +540,12 @@ def main() -> None:
     sys.exit(error_catch)
 
 if __name__ == '__main__':
-    try:
-        import subprocess
-        subprocess.check_output(['net', 'session'], stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError: # status != 0
+    import ctypes
+    is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+    if not is_admin:
         cs_ops.error('管理者権限を有効にして実行してください。')
-    else:
-        main()
+
+    del is_admin
+    del ctypes
+
+    main()
