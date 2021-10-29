@@ -25,6 +25,7 @@ from System.ComponentModel import Container  # type: ignore
 from System.Drawing import Icon, SystemIcons  # type: ignore
 from System.Net.NetworkInformation import NetworkInterface  # type: ignore
 
+
 PYTASKMGR = 'PyTaskManager'
 if not __debug__:
     PYTASKMGR += ' (Debug Mode)'
@@ -452,6 +453,7 @@ def battery() -> StatusContainer:
 def memory() -> StatusContainer:
     return _wmi_info('Win32_PhysicalMemory')
 
+
 def sysinfo() -> StatusContainer:
     return _wmi_info('Win32_OperatingSystem')
 
@@ -555,7 +557,9 @@ def memory_usage(refresh=False) -> float:
 
 
 def close_container():
-    close(container)
+    try:
+        close(container)
+    except: pass
 
 def _a():
     """unused."""

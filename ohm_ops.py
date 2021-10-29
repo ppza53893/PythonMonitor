@@ -1,8 +1,9 @@
 import enum
+import time
 
 import clr
 
-from cs_ops import error, StatusContainer
+from cs_ops import StatusContainer, close_container, error
 
 
 class HardWareType(enum.IntEnum):
@@ -54,9 +55,9 @@ class OpenHardWareMonitor:
 
     def curstatus(self)-> StatusContainer:
         self.container = StatusContainer()
-        for i in self.handle.Hardware:
+        for sensors in self.handle.Hardware:
             # cpu, ram, ...
-            self.parse_sensors(i)
+            self.parse_sensors(sensors)
         return self.container
 
     def parse_sensors(self, sensors) -> None:
@@ -98,7 +99,9 @@ class OpenHardWareMonitor:
     def close(self) -> None:
         if self._closed:
             return
+        time.sleep(1)
         self.handle.Close()
+        close_container()
         self._closed = True
     
     def __enter__(self):

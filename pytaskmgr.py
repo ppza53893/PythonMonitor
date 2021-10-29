@@ -2,13 +2,14 @@
 import datetime
 import functools
 import json
-import nt  # type: ignore
 import os
-import sys
+import shutil
 import time
 import tkinter as tk
 import tkinter.ttk as ttk
+import traceback
 from typing import Callable, List, Tuple, Union
+
 
 import cs_ops
 from ohm_ops import OpenHardWareMonitor
@@ -17,8 +18,6 @@ from ohm_ops import OpenHardWareMonitor
 TASKMGR_PATH = os.path.split(os.path.abspath(__file__))[0]
 ICON = os.path.join(TASKMGR_PATH, 'shared.ico')
 TCL_PATH = os.path.join(TASKMGR_PATH, 'azure.tcl')
-NETOWORK = cs_ops.get_networks()
-RECURSIVE_LOOP = 0
 
 show_notification: Callable[[str], None] = functools.partial(
     cs_ops.show_notification,
@@ -26,17 +25,17 @@ show_notification: Callable[[str], None] = functools.partial(
 
 
 class MainWindow(ttk.Frame):
-    COLOR_MAX = 255
+    COLOR_MAX: int = 255
     BATTERY_ALERT_MIN: int = 35
     BATTERY_ALERT_MAX: int = 95
-    MAX_GPU_POWER = None
+    MAX_GPU_POWER = None # reserved
 
     def __init__(
         self,
         master: tk.Tk,
-        width: int=640,
-        height: int=480,
-        ohm: OpenHardWareMonitor=None) -> None:
+        width: int,
+        height: int,
+        ohm: OpenHardWareMonitor) -> None:
         super().__init__(master)
         self.master = master
         self.pack()
@@ -60,6 +59,7 @@ class MainWindow(ttk.Frame):
         # networks
         self.network = cs_ops.get_networks()
         self.wifi_sent, self.wifi_receive = self.get_wifi_usage()
+        self.network_wait = 0
         self.time_temp = time.time()
 
         # if has battery & has nvidia gpu
@@ -126,12 +126,16 @@ class MainWindow(ttk.Frame):
         # 更新用の関数
         self.update()
 
-
     def get_wifi_usage(self) -> Tuple[int, int]:
         if self.network.isempty:
+            if self.network_wait == 4:
+                self.network = cs_ops.get_networks()
+                self.network_wait = 0
+                return self.get_wifi_usage()
+            self.network_wait += 1
             return -1, -1
-        adapter = self.network.adapter
-        stats = adapter.GetIPv4Statistics()
+
+        stats = self.network.adapter.GetIPv4Statistics()
         return stats.BytesSent, stats.BytesReceived
 
     def get_name(self) -> List[str]:
@@ -158,11 +162,11 @@ class MainWindow(ttk.Frame):
         self._system = [
             'Disk usage', 'Memory',
             'Running PIDs',
-            'WiFi usage (In)',
-            'WiFi usage (Out)']
+            'Network (In)',
+            'Network (Out)']
 
         self.exclude = self._cpu_freq + self._cpu_power +\
-            ['WiFi usage (In)', 'WiFi usage (Out)'] + ['GPU fan', 'GPU power']
+            ['Network (In)', 'Network (Out)'] + ['GPU fan', 'GPU power']
         return self._init_name + cpus + self._system
 
     def set_format(self) -> None:
@@ -205,27 +209,30 @@ class MainWindow(ttk.Frame):
         if self.type == 'ac':
             # バッテリー情報
             ac_info = cs_ops.get_battery_status().tolist()
-            init_info= [ac_info[0], ac_info[2], ac_info[1]]
+            ret_stat = [ac_info[0], ac_info[2], ac_info[1]]
         elif self.type == 'gpu':
             # gpu
             gpu_info = current_status.GpuNvidia
-            init_info = [
+            ret_stat = [
                 gpu_info.Fan[0].container.value,
                 gpu_info.Power[0].container.value,
                 gpu_info.Temperature[0].container.value]
 
-        # CPU温度
-        try:
-            temperature = [t.container.value for t in current_status.CPU.Temperature]
-        except:
-            # 無ければ
-            temperature = ['NaN']
-
         # cpu使用率
         processes_cpu = [p.container.value for p in current_status.CPU.Load]
 
-        self.master.title(
-            'CPU: {:>4.1f}%, Temp: {:>4.1f}°C'.format(processes_cpu[0], temperature[0]))
+        # CPU温度
+        try:
+            temperature = [t.container.value for t in current_status.CPU.Temperature]
+            title = 'CPU: {:>4.1f}%, Temp: {:>4.1f}°C'.format(processes_cpu[0], temperature[0])
+        except:
+            # 無ければ
+            temperature = ['NaN']
+            title = 'CPU: {:>4.1f}%'.format(processes_cpu[0])
+
+        self.master.title(title)
+        
+        ret_stat += temperature
 
         # クロック周波数
         try:
@@ -239,10 +246,12 @@ class MainWindow(ttk.Frame):
         except KeyError:
             processes_cpu += ['NaN']
         
+        ret_stat += processes_cpu
+        
         # その他
-        total, free = nt._getdiskusage('c:\\')
-        others = [
-            round(100*(total - free) / total, 1),  # Cドライブ使用量
+        total, used, _ = shutil.disk_usage('c:\\')
+        ret_stat += [
+            round(100*used / total, 1),  # Cドライブ使用量
             cs_ops.memory_usage(),                 # RAM使用量 
             len(cs_ops.get_current_pids())]          # PID数
 
@@ -251,17 +260,20 @@ class MainWindow(ttk.Frame):
         _time = time.time()
         time_diff = _time - self.time_temp
         if cur_sent >= 0:
-            sent_ps = (cur_sent - self.wifi_sent) / 1024 * time_diff
-            resc_ps = (cur_recv - self.wifi_receive) / 1024 * time_diff
-            self.wifi_sent = cur_sent
-            self.wifi_receive = cur_recv
-            self.time_temp = _time
+            if self.wifi_sent < 0:
+                sent_ps, resc_ps = 'Connecting...', 'Connecting...'
+            else:
+                sent_ps = (cur_sent - self.wifi_sent) / 1024 * time_diff
+                resc_ps = (cur_recv - self.wifi_receive) / 1024 * time_diff
+                self.time_temp = _time
         else:
-            sent_ps = 'NaN'
-            resc_ps = 'NaN'
-        wifi_stat = [sent_ps, resc_ps]
+            sent_ps, resc_ps = 'NaN', 'NaN'
 
-        return init_info + temperature + processes_cpu + others + wifi_stat
+        self.wifi_sent = cur_sent
+        self.wifi_receive = cur_recv
+        ret_stat += [sent_ps, resc_ps]
+
+        return ret_stat
 
     def make_table(self) -> None:
         """テーブルを作成"""
@@ -453,13 +465,10 @@ class MainWindow(ttk.Frame):
             'Ctrl + J ... ウィンドウを左端に移動\n'
             'Ctrl + L ... ウィンドウを右端に移動\n'
             'Ctrl + R ... ウィンドウを半透明化 or 解除\n'
-            'Ctrl + B ... 情報の更新速度を0.5s間隔に変更 / 1s間隔に戻す\n\n'
-            '※ ノートPCにおいて起動時から電源プラグが刺さった状態の場合、\n'
-            '　 一度プラグ抜くとこのアプリが強制終了する場合があります。')
+            'Ctrl + B ... 情報の更新速度を0.5s間隔に変更 / 1s間隔に戻す\n\n')
 
         print(msg)
         cs_ops.info(msg)
-
 
     def move_u(self, *args, **kwargs) -> None:
         """上へ"""
@@ -515,37 +524,24 @@ class MainWindow(ttk.Frame):
             self.cycle = 1000
         print('Cycle: {:.1f}s'.format(self.cycle/1000))
 
-def runapp(ohm: OpenHardWareMonitor):
-    window = tk.Tk()
-    MainWindow(window, 340, 272, ohm)
-    window.mainloop()
 
-def main() -> None:
-    error_catch = 0
-    msg = None
+def start() -> None:
+    with OpenHardWareMonitor(
+        os.path.join(TASKMGR_PATH,'OpenHardwareMonitorLib')) as ohm:
+        try:
+            window = tk.Tk()
+            MainWindow(window, 340, 272, ohm)
+            window.mainloop()
+        except:
+            msg = traceback.format_exc()
+            show_notification(msg)
+            print(msg)
 
-    dllpath = os.path.join(TASKMGR_PATH,'OpenHardwareMonitorLib')
-    ohm = OpenHardWareMonitor(dllpath)
-    try:
-        runapp(ohm)
-    except (Exception, KeyboardInterrupt) as e:
-        msg = repr(e)
-        error_catch = 1
-    ohm.close()
-
-    if msg:
-        msg_box = cs_ops.error if not __debug__ else show_notification
-        msg_box(msg)
-    cs_ops.close_container()
-    sys.exit(error_catch)
 
 if __name__ == '__main__':
     import ctypes
-    is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
-    if not is_admin:
+    if ctypes.windll.shell32.IsUserAnAdmin() == 0:
         cs_ops.error('管理者権限を有効にして実行してください。')
-
-    del is_admin
     del ctypes
 
-    main()
+    start()
