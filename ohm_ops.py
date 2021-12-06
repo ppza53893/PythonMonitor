@@ -49,7 +49,6 @@ class OpenHardWareMonitor:
         self.handle.CPUEnabled = True
         self.handle.RAMEnabled = True
         self.handle.GPUEnabled = True
-        self.handle.HDDEnabled = True
         self.handle.Open()
         self._closed = False
 

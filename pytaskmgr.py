@@ -67,7 +67,7 @@ class MainWindow(ttk.Frame):
         unsupported = ['NoSystemBattery', 'Unknown']
         if self.ohm.has_nvidia_gpu and bcs not in unsupported:
             result = cs_ops.hint_yesno('Nvidia GPUを検出しました。バッテリ―状態の代わりに表示しますか?')
-            self.use_battery = result == cs_ops.ans_yes
+            self.use_battery = result != cs_ops.ans_yes
         else:
             # desktop or tablet
             self.use_battery = bcs not in unsupported
