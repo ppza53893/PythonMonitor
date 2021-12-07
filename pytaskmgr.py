@@ -319,7 +319,7 @@ class MainWindow(ttk.Frame):
                     master_clock_id = id
                 elif name == 'Battery':
                     self.battery_id = id
-                elif name == 'Temperature':
+                elif name == 'CPU temperature':
                     master_temp_id = id
             self.set_color(index, name, proc)
             self.id_list.append(id)
