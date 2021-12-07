@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Callable, NoReturn, Tuple
+from typing import NoReturn, Tuple
 
 from ..gname import PYTASKMGR
 from ..utils import Icon, SystemIcons, close_container, container, forms
@@ -13,10 +13,28 @@ __all__ = [
     'ans_yes',
     'show_message_to_notification',
     'workingarea',
-    'borders']
+    'borders',
+    'set_icon']
 
 
 notifyicon = forms.NotifyIcon(container)
+ICON = SystemIcons.Application
+
+
+def set_icon(icon_path: str) -> None:
+    """
+    Set the icon of the application
+    
+    Args:
+        icon_path (str): The path to the icon. It should be a .ico file.
+    """
+    global ICON
+
+    _, ext = os.path.splitext(icon_path)
+    if ext.lower() != '.ico':
+        raise ValueError('The icon should be a .ico file')
+    if os.path.exists(icon_path):
+        ICON = Icon(icon_path)
 
 
 def _messagebox(

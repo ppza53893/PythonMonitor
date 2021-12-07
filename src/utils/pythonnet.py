@@ -1,9 +1,10 @@
+import os
 import sys
 import importlib
+from types import ModuleType
 from typing import Optional, List, Union
 
 import clr
-
 
 __all__ = ["import_module"]
 
@@ -11,7 +12,7 @@ __all__ = ["import_module"]
 def import_module(
     assembly: str,
     module_name: Optional[str] = None,
-    submodule_or_classes: Optional[Union[List, str]] = None) -> Union[object, List[object]]:
+    submodule_or_classes: Optional[Union[List, str]] = None) -> Union[ModuleType, List[ModuleType]]:
     """
     Import a module from the CLR and return the module object(s).
     
@@ -23,6 +24,9 @@ def import_module(
     Returns:
         The module object(s).
     """
+    temp, ext = os.path.splitext(assembly)
+    if ext == ".dll":
+        assembly = temp
     # if already imported, return the module object
     if assembly in sys.modules:
         return sys.modules[assembly]
@@ -75,6 +79,7 @@ def test_import_module():
     test_module_import_error("System.Diagnostics.Process", "System.Diagnostics")
     test_module_import_error("System.Drawing", None, ["Icon", "SystemIcons"])
     test_module_import_error("OpenHardwareMonitorLib", "OpenHardwareMonitor", 'Hardware')
+    test_module_import_error("OpenHardwareMonitorLib.dll", "OpenHardwareMonitor", 'Hardware')
 
 
 if __name__ == "__main__":

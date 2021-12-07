@@ -1,103 +1,53 @@
 """PyTaskManager"""
 import datetime
-import functools
 import json
 import os
-import shutil
-import time
 import tkinter as tk
 import tkinter.ttk as ttk
 import traceback
-from typing import Callable, List, Tuple, Union
+from typing import List, Union
 
-
-import cs_ops
-from ohm_ops import OpenHardWareMonitor
-
+from src import *
 
 TASKMGR_PATH = os.path.split(os.path.abspath(__file__))[0]
 ICON = os.path.join(TASKMGR_PATH, 'shared.ico')
 TCL_PATH = os.path.join(TASKMGR_PATH, 'azure.tcl')
-
-show_notification: Callable[[str], None] = functools.partial(
-    cs_ops.show_notification,
-    app_icon=ICON)
+set_icon(ICON)
 
 
 class MainWindow(ttk.Frame):
-    COLOR_MAX: int = 255
-    BATTERY_ALERT_MIN: int = 35
-    BATTERY_ALERT_MAX: int = 95
-    MAX_GPU_POWER = None # reserved
-
     def __init__(
         self,
         master: tk.Tk,
         width: int,
         height: int,
-        ohm: OpenHardWareMonitor) -> None:
+        ohm: OpenHardwareMonitor) -> None:
         super().__init__(master)
+        
         self.master = master
+        self.ohm = ohm
+        self.height = height
+        self.width = width
         self.pack()
 
         if os.path.exists(TCL_PATH):
             self.master.tk.call("source", TCL_PATH)
             self.master.tk.call("set_theme", "dark")
         
-        # ohm
-        self.ohm = ohm
-
-        # some
-        self.battery_id = ''
-        self.battery_full = False        
-        self.battery_warn = False
-        self.cycle = 1000 # 1s
-
         # init cpu usage
         self.show_hint_message()
-
-        # networks
-        self.network = cs_ops.get_networks()
-        self.wifi_sent, self.wifi_receive = self.get_wifi_usage()
-        self.network_wait = 0
-        self.time_temp = time.time()
-
-        # if has battery & has nvidia gpu
-        bcs = cs_ops.get_battery_status()
-        unsupported = ['NoSystemBattery', 'Unknown']
-        if self.ohm.has_nvidia_gpu and bcs not in unsupported:
-            result = cs_ops.hint_yesno('Nvidia GPUを検出しました。バッテリ―状態の代わりに表示しますか?')
-            self.use_battery = result != cs_ops.ans_yes
-        else:
-            # desktop or tablet
-            self.use_battery = bcs not in unsupported
-        
-        # define name
-        self.name = self.get_name()
-        self.bcs_name_fix = cs_ops.bcs_name_fix()
-
-        # screen size
-        self.window_width, self.window_height = cs_ops.workingarea()
-
-        # tkinter window size
-        self.height = height
-        self.width = width
-
-        # is bind or not
-        self.h_bind = False
-        self.w_bind = False
-
-        # keep tops
-        self.showtop = False
-
-        # option
-        self.transparent = False
-
-        # master
+        # initialize
+        self._initialize_variables()
+        # move to default place
         self.move_u()
-        # self.master.overrideredirect(True)
-        if ICON is not None and os.path.exists(ICON):
+
+        # set icon
+        if os.path.exists(ICON):
             self.master.iconbitmap(ICON)
+
+        # app settings
+        self.master.title('PythonMonitor')
+        self.master.attributes("-topmost", self.showtop)
         self.master.protocol("WM_DELETE_WINDOW", self.app_exit)
         self.master.bind('<Control-Key-q>', self.app_exit)
         self.master.bind('<Control-Key-p>', self.switch_topmost)
@@ -109,16 +59,8 @@ class MainWindow(ttk.Frame):
         self.master.bind('<Control-Key-l>', self.move_r)
         self.master.bind('<Control-Key-r>', self.switch_window_transparency)
         self.master.bind('<Control-Key-b>', self.switch_cycle)
-        
-        # initial title
-        self.master.title('Process')
-        self.master.attributes("-topmost", self.showtop)
-
-        # lock
+        self.master.bind('<Control-Key-t>', self.switch_title)
         self.master.resizable(width=False, height=False)
-
-        # 表示する単位の設定
-        self.set_format()
 
         # テーブル作成
         self.make_table()
@@ -126,154 +68,145 @@ class MainWindow(ttk.Frame):
         # 更新用の関数
         self.update()
 
-    def get_wifi_usage(self) -> Tuple[int, int]:
-        if self.network.isempty:
-            if self.network_wait == 4:
-                self.network = cs_ops.get_networks()
-                self.network_wait = 0
-                return self.get_wifi_usage()
-            self.network_wait += 1
-            return -1, -1
-
-        stats = self.network.adapter.GetIPv4Statistics()
-        return stats.BytesSent, stats.BytesReceived
-
-    def get_name(self) -> List[str]:
-        if not self.use_battery:
-            self._init_name = ['GPU fan', 'GPU power', 'GPU temperature']
-            self.type = 'gpu'
-        else:
-            self._init_name = ['AC status','Battery', 'Battery status']
-            self.type = 'ac'
-
-        self._cpu_usage: List[str] = ['CPU usage']+\
-            [f'CPU #{i+1} usage' for i in range(len(self.ohm.curstatus().CPU.Load)-1)]
-        self._cpu_freq: List[str] = ['CPU bus'] +\
-            [f'CPU #{i+1} clock' for i in range(self.ohm.i_cpu_size('Clock')-1)]
-        self._cpu_power: List[str] = ['CPU power', 'CPU (cores) power'] +\
-            [f'CPU #{i+1} power' for i in range(self.ohm.i_cpu_size('Power')-2)]
-
-        temps = self.ohm.i_cpu_size('Temperature')
-        self._cpu_temp = ['CPU temperature']
-        if temps > 1:
-            self._cpu_temp += [f'CPU #{i+1} temperature' for i in range(temps - 1)]
-        cpus = self._cpu_temp + self._cpu_usage + self._cpu_freq + self._cpu_power
-
-        self._system = [
-            'Disk usage', 'Memory',
-            'Running PIDs',
-            'Network (In)',
-            'Network (Out)']
-
-        self.exclude = self._cpu_freq + self._cpu_power +\
-            ['Network (In)', 'Network (Out)'] + ['GPU fan', 'GPU power']
-        return self._init_name + cpus + self._system
-
-    def set_format(self) -> None:
-        self.unit = []
-        for name in self.name:
-            if name in ['Running PIDs', 'AC status', 'Battery status']:
-                self.unit.append('')
-            elif name in ['WiFi usage (In)', 'WiFi usage (Out)']:
-                self.unit.append('KB/s')
-            elif name in ['GPU temperature', 'CPU temperature']:
-                self.unit.append('°C')
-            elif name in self._cpu_power + ['GPU power']:
-                self.unit.append('W')
-            elif name in self._cpu_freq:
-                self.unit.append('MHz')
-            elif name == 'GPU fan':
-                self.unit.append('RPM')
-            else:
-                self.unit.append('%')
-
-    def set_position(self) -> None:
-        """位置をセットする"""
-        pos_w = self.window_width - self.width
-        pos_h = self.window_height - self.height
-        frame_border, border = cs_ops.borders()
-        if not self.w_bind:
-            pos_w -= (frame_border.Width + border.Width)
-        if not self.h_bind:
-            pos_h -= (frame_border.Height + border.Height)
-        print(f'Geometry: `{self.width}x{self.height}+{pos_w}+{pos_h}`.')
-        self.master.geometry(f'{self.width}x{self.height}+{pos_w}+{pos_h}')
-
-    def get_status(self) -> List[Union[str, int]]:
+    def _initialize_variables(self):
+        """Initialize.
         """
-        各情報を取得する
-        """
-        # OHMからの情報
-        current_status = self.ohm.curstatus()
-
-        if self.type == 'ac':
-            # バッテリー情報
-            ac_info = cs_ops.get_battery_status().tolist()
-            ret_stat = [ac_info[0], ac_info[2], ac_info[1]]
-        elif self.type == 'gpu':
-            # gpu
-            gpu_info = current_status.GpuNvidia
-            ret_stat = [
-                gpu_info.Fan[0].container.value,
-                gpu_info.Power[0].container.value,
-                gpu_info.Temperature[0].container.value]
-
-        # cpu使用率
-        processes_cpu = [p.container.value for p in current_status.CPU.Load]
-
-        # CPU温度
-        try:
-            temperature = [t.container.value for t in current_status.CPU.Temperature]
-            title = 'CPU: {:>4.1f}%, Temp: {:>4.1f}°C'.format(processes_cpu[0], temperature[0])
-        except:
-            # 無ければ
-            temperature = ['NaN']
-            title = 'CPU: {:>4.1f}%'.format(processes_cpu[0])
-
-        self.master.title(title)
+        # battery
+        self.use_battery_mode = self.ohm.select_battery_or_gpu()
         
-        ret_stat += temperature
-
-        # クロック周波数
-        try:
-            processes_cpu += [p.container.value for p in current_status.CPU.Clock]
-        except KeyError:
-            processes_cpu += ['NaN']
-
-        # 電力
-        try:
-            processes_cpu += [p.container.value for p in current_status.CPU.Power]
-        except KeyError:
-            processes_cpu += ['NaN']
+        # networks
+        self.network = Network()
         
-        ret_stat += processes_cpu
-        
-        # その他
-        total, used, _ = shutil.disk_usage('c:\\')
-        ret_stat += [
-            round(100*used / total, 1),  # Cドライブ使用量
-            cs_ops.memory_usage(),                 # RAM使用量 
-            len(cs_ops.get_current_pids())]          # PID数
+        # window
+        self.window_width, self.window_height = workingarea()
 
-        # Wifi使用量(MB/s)
-        cur_sent, cur_recv = self.get_wifi_usage()
-        _time = time.time()
-        time_diff = _time - self.time_temp
-        if cur_sent >= 0:
-            if self.wifi_sent < 0:
-                sent_ps, resc_ps = 'Connecting...', 'Connecting...'
-            else:
-                sent_ps = (cur_sent - self.wifi_sent) / 1024 * time_diff
-                resc_ps = (cur_recv - self.wifi_receive) / 1024 * time_diff
-                self.time_temp = _time
+        # table names
+        status = self.ohm.curstatus()
+        
+        if self.use_battery_mode:
+            self.table_names = [
+                Name('AC Status', tag='ac'),
+                Name('Battery', tag='ac', unit='%'),
+                Name('Battery Status', tag='ac'),
+            ]
         else:
-            sent_ps, resc_ps = 'NaN', 'NaN'
+            nv = status.GpuNvidia
+            self.table_names = [
+                Name.from_container(nv.Fan[0].container),
+                Name.from_container(nv.Power[0].container),
+                Name.from_container(nv.Temperature[0].container),
+            ]
+        # cpus
+        self.cpu_temp_table = TableGroup(status.CPU.Temperature, custom_name='CPU Tempeature')
+        self.cpu_load_table = TableGroup(status.CPU.Load, custom_name='CPU Usage')
+        self.cpu_clock_table = TableGroup(status.CPU.Clock, custom_name='CPU Clock')
+        self.cpu_power_table = TableGroup(status.CPU.Power, custom_name='CPU Power')
+        
+        self.table_names += self.cpu_temp_table.names
+        self.table_names += self.cpu_load_table.names
+        self.table_names += self.cpu_clock_table.names
+        self.table_names += self.cpu_power_table.names
+        
+        _system = [
+            Name('Disk Usage', tag='system', unit='%'),
+            Name('Memory Usage', tag='system', unit='%'),
+            Name('Running Processes'),
+            Name('Network Sent', unit='KB/s'),
+            Name('Network Receive', unit='KB/s'),
+        ]
+        
+        self.table_names += _system
 
-        self.wifi_sent = cur_sent
-        self.wifi_receive = cur_recv
-        ret_stat += [sent_ps, resc_ps]
+        # is bind or not
+        self.h_bind = False
+        self.w_bind = False
 
-        return ret_stat
+        # keep tops
+        self.showtop = False
+
+        # option
+        self.transparent = False
+
+        # update interval
+        self.cycle = 1000 # 1s
+        
+        # table ids
+        self.id_list = []
+        
+        # title 
+        self.show_status_to_title = True
+
+
+    def get_full_status(self) -> List[Union[str, int]]:
+        """Get current status.
+
+        Collected from:
+            - GPU, CPU, Memory data: Openhardwaremonitor API
+            - Network (from System.Net.NetworkInformation)
+            - Battery (from System.Forms.SystemInformation.PowerStatus)
+            - PIDs (from System.Diagnostics.Process)
+
+        Returns:
+            List[str, int]: status
+        """
+
+        ohm_status = self.ohm.curstatus()
+        
+        if self.use_battery_mode:
+            status = get_battery_status().tolist()
+        else:
+            status = [
+                ohm_status.GpuNvidia.Fan[0].container.value,
+                ohm_status.GpuNvidia.Power[0].container.value,
+                ohm_status.GpuNvidia.Temperature[0].container.value,
+            ]
+
+        status += [p.container.value for p in ohm_status.CPU.Temperature]
+        status += [p.container.value for p in ohm_status.CPU.Load]
+        status += [p.container.value for p in ohm_status.CPU.Clock]
+        status += [p.container.value for p in ohm_status.CPU.Power]
+        
+        if self.show_status_to_title:
+            cpu_usage = ohm_status.CPU.Load[0].container.value
+            cpu_temp = ohm_status.CPU.Temperature[0].container.value
+            title = f'CPU: {cpu_usage:>4.1f}%, Temp: {cpu_temp:>4.1f}°C'
+            self.master.title(title)
+        
+        sent, receive = self.network.get_sent_received()
+        _system = [
+            c_disk_usage(),
+            ohm_status.RAM.Load[0].container.value,
+            get_current_pids(),
+            sent,
+            receive
+        ]
+        status += _system
+        
+        return status
+
+    def determine_color(self, name: Name, value: Union[int, float, str]) -> str:
+        """
+        Set color code.
+
+        Args:
+            name (Name): Name object. shuold be in self.table_names.
+            value (Union[int, float, str]): value.
+
+        Returns:
+            str: color code.
+        """
+        if name.istag('Temperature'):
+            cl = set_temperature_color(value)
+        elif name.istag('Load'):
+            cl = set_load_color(value)
+        elif name.istag('ac'):
+            cl = set_battery_color(name, value)
+        elif name.istag('system'):
+            cl = set_system_color(value)
+        else:
+            cl = default_color
+        
+        return cl
 
     def make_table(self) -> None:
         """テーブルを作成"""
@@ -287,146 +220,54 @@ class MainWindow(ttk.Frame):
         self.tree.heading(1, text="Value")
         self.tree.heading(2, text="Unit")
 
-        self.id_list = []
-
-        processes = self.get_status()
+        status = self.get_full_status()
 
         master_usage_id = ''
         master_power_id = ''
         master_clock_id = ''
         master_temp_id = ''
-
-        for index, (name, proc, fmt) in enumerate(zip(self.name, processes, self.unit)):
-            if name in self._cpu_usage[1:]:
-                id = self.tree.insert(
-                    master_usage_id, "end", tags=index, text=name, values=(self.conv_proc_fmt(proc), fmt))
-            elif name in self._cpu_power[1:]:
-                id = self.tree.insert(
-                    master_power_id, "end", tags=index, text=name, values=(self.conv_proc_fmt(proc), fmt))
-            elif name in self._cpu_freq[1:]:
-                id = self.tree.insert(
-                    master_clock_id, "end", tags=index, text=name, values=(self.conv_proc_fmt(proc), fmt))
-            elif len(self._cpu_temp) > 1 and name in self._cpu_temp[1:]:
-                id = self.tree.insert(
-                    master_temp_id, "end", tags=index, text=name, values=(self.conv_proc_fmt(proc), fmt))
-            else:
-                id = self.tree.insert("", "end", tags=index, text=name, values=(self.conv_proc_fmt(proc), fmt))
-                if name == 'CPU usage':
-                    master_usage_id = id
-                elif name == 'CPU power':
-                    master_power_id = id
-                elif name == 'CPU bus':
-                    master_clock_id = id
-                elif name == 'Battery':
-                    self.battery_id = id
-                elif name == 'Temperature':
-                    master_temp_id = id
-            self.set_color(index, name, proc)
-            self.id_list.append(id)
-        self.tree.pack()
-
-    def conv_proc_fmt(self, proc) -> str:
-        """フォーマットを整理"""
-        if isinstance(proc, float):
-            proc_str = f'{proc:.1f}'
-        else:
-            proc_str = str(proc)
-        return proc_str
-    
-    def _clip(self, value, round_float = True, color_max = None):
-        value = round(value) if round_float else value
-        color_max = color_max or self.COLOR_MAX
-        if value < 0:
-            return 0
-        return color_max if value > color_max else value
-    
-    def _color_code(self, r, g, b):
-        return '#{:0>2X}{:>02X}{:>02X}'.format(r, g, b)
-
-    def set_color(self, tag, name, proc) -> None:
-        """テーブルのフォントの色を値に応じて変化させる"""
-        if isinstance(proc, float) and not name in self.exclude:
-            proc = self._clip(proc, False, 100.)
-            value = (-proc/100.)**3 if name in ['Disk usage', 'Memory'] else - proc/100.
-            p = self._clip(self.COLOR_MAX*(value + 1))
-            cl = self._color_code(self.COLOR_MAX, p, p)
-        elif name == 'Battery' and proc != -1:
-            p = round(self.COLOR_MAX * self._clip(proc, False, 100.) / 100.)
-            rc = self.COLOR_MAX if p < 0x80 else self._clip((-0x83*p + 0xc001)/0x7f)
-            gc = 2*p if p < 0x80 else self._clip((-0x03*p + 0x8001)/0x7f)
-            cl = self._color_code(rc, gc, 0)
-        elif name == 'AC status' and proc != 'Unknown':
-            if proc == 'Offline':
-                cl = '#ffff00'
-            elif proc == 'Online':
-                cl = '#7cfc00'
-        elif (name == 'Battery status' and proc in self.bcs_name_fix):
-            if proc in ['High', 'Charging', 'Charging(High)']:
-                cl = '#7cfc00'
-            elif proc in ['Low', 'Charging(Low)', 'Charging(Critical)']:
-                cl = '#ffff00'
-            elif proc == 'Critical':
-                cl = '#ff0000'
-        elif name == 'GPU power':
-            if isinstance(self.MAX_GPU_POWER, (int, float)) and self.MAX_GPU_POWER > 0:
-                p = self._clip(self.COLOR_MAX * (1. - proc / self.MAX_GPU_POWER))
-                cl = self._color_code(self.COLOR_MAX, p, p)
         
-        try: cl
-        except:
-            cl = 'white'
+        for index, (name, value) in enumerate(zip(self.table_names, status)):
+            insert_kwg = dict(index='end', tags=index, text=name.name, values=(adjust_format(value), name.unit))
+            if self.cpu_temp_table.is_children(name):
+                id = self.tree.insert(master_temp_id, **insert_kwg)
+            elif self.cpu_load_table.is_children(name):
+                id = self.tree.insert(master_usage_id, **insert_kwg)
+            elif self.cpu_clock_table.is_children(name):
+                id = self.tree.insert(master_clock_id, **insert_kwg)
+            elif self.cpu_power_table.is_children(name):
+                id = self.tree.insert(master_power_id, **insert_kwg)
+            else:
+                id = self.tree.insert('', **insert_kwg)
+            
+            if name.name == 'CPU Usage':
+                master_usage_id = id
+            elif name.name == 'CPU Power':
+                master_power_id = id
+            elif name.name == 'CPU Clock':
+                master_clock_id = id
+            elif name.name == 'CPU Tempeature':
+                master_temp_id = id
+            
+            self.id_list.append(id)
+            self.tree.tag_configure(tagname=index, foreground=self.determine_color(name, value))
 
-        self.tree.tag_configure(tagname=tag, foreground=cl)
-
-    def check_moveable(self):
-        if self.w_bind and self.h_bind:
-            return
-
-        move = False
-
-        # ウィンドウサイズが変わったとき
-        wsize, hsize = cs_ops.workingarea()
-
-        if not self.w_bind and wsize != self.window_width:
-            self.window_width = wsize
-            move = True
-
-        if not self.h_bind and hsize != self.window_height:
-            self.window_height = hsize
-            move = True
-
-        if move:
-            self.set_position()     
+        self.tree.pack()
 
     def update(self) -> None:
         """更新時の挙動"""
         self.check_moveable()
 
-        # 次状態を取得
-        processes = self.get_status()
-        for i, (index, proc) in enumerate(zip(self.id_list, processes)):
-            self.tree.set(index, 1, value=self.conv_proc_fmt(proc))
-            self.set_color(i, self.name[i], proc)
-
-            # バッテリー残量のお知らせ
-            if self.battery_id == index and self.use_battery:
-                current = processes[1]
-                charging = processes[0] == cs_ops.PowerLineStatus.Online
-
-                if current <= self.BATTERY_ALERT_MIN and not charging and not self.battery_warn:
-                    # 残量がないとき
-                    show_notification(
-                        message = f'残りバッテリ―容量が{self.BATTERY_ALERT_MIN}%です。ACアダプタを接続してください。')
-                    self.battery_warn = True
-                elif current >= self.BATTERY_ALERT_MAX and charging and not self.battery_full:
-                    # 十分充電されたとき
-                    show_notification(
-                        message = 'PCは十分に充電されています。')
-                    self.battery_full = True
-                elif current > self.BATTERY_ALERT_MIN and current < self.BATTERY_ALERT_MAX:
-                    # 特にないとき
-                    self.battery_full = False
-                    self.battery_warn = False
+        status = self.get_full_status()
+        for index, (table_id, value) in enumerate(zip(self.id_list, status)):
+            self.tree.set(table_id, column=1, value=adjust_format(value))
+            self.tree.tag_configure(
+                tagname=index,
+                foreground=self.determine_color(self.table_names[index], value))
+            # alert if battery is low or high
+            if self.use_battery_mode and index == 1: # BatteryLife
+                alert_on_baloontip(value, status[0])
+    
         self.master.after(self.cycle, self.update)
 
     def app_exit(self, *args, **kwargs) -> None:
@@ -438,21 +279,23 @@ class MainWindow(ttk.Frame):
         """
         各情報をjson形式で出力(full output)
         """
-        currents = self.ohm.curstatus()
-        print(currents, flush=True)
+        status = self.ohm.curstatus()
+        print(status, flush=True)
+
         _date = datetime.datetime.now().strftime('%Y_%m_%d')
         fpath = os.path.join(TASKMGR_PATH, _date+'_dump.json')
         add_summary = dict(recorded = _date)
-        if self.use_battery:
-            add_summary['Battery Status (all)'] = cs_ops.get_battery_status().tolist()
+        
+        if self.use_battery_mode:
+            add_summary['Battery Status (all)'] = get_battery_status().tolist()
         try:
             with open(fpath, 'w') as f:
-                summary = dict(**currents.todict(), **add_summary)
+                summary = dict(**status.todict(), **add_summary)
                 json.dump(summary, f, indent=4)
         except PermissionError:
-            show_notification('保存に失敗しました。アクセスが拒否されました。')
+            show_message_to_notification('保存に失敗しました。アクセスが拒否されました。')
         else:
-            show_notification(f'ダンプファイルを{fpath}に保存しました。')
+            show_message_to_notification(f'ダンプファイルを{fpath}に保存しました。')
 
     def show_hint_message(self, *args, **kwargs):
         msg = ('使い方:\n\n'
@@ -465,10 +308,39 @@ class MainWindow(ttk.Frame):
             'Ctrl + J ... ウィンドウを左端に移動\n'
             'Ctrl + L ... ウィンドウを右端に移動\n'
             'Ctrl + R ... ウィンドウを半透明化 or 解除\n'
-            'Ctrl + B ... 情報の更新速度を0.5s間隔に変更 / 1s間隔に戻す\n\n')
+            'Ctrl + B ... 情報の更新速度を0.5s間隔に変更 / 1s間隔に戻す\n'
+            'Ctrl + T ... タイトルにCPU使用率/温度を表示 / 非表示\n\n')
 
         print(msg)
-        cs_ops.question(msg)
+        info(msg)
+
+    def set_position(self) -> None:
+        """位置をセットする"""
+        pos_w = self.window_width - self.width
+        pos_h = self.window_height - self.height
+        frame_border, border = borders()
+        if not self.w_bind:
+            pos_w -= (frame_border.Width + border.Width)
+        if not self.h_bind:
+            pos_h -= (frame_border.Height + border.Height)
+        print(f'Geometry: `{self.width}x{self.height}+{pos_w}+{pos_h}`.')
+        self.master.geometry(f'{self.width}x{self.height}+{pos_w}+{pos_h}')
+
+    def check_moveable(self):
+        if self.w_bind and self.h_bind:
+            return
+
+        move = False
+        # ウィンドウサイズが変わったとき
+        wsize, hsize = workingarea()
+        if not self.w_bind and wsize != self.window_width:
+            self.window_width = wsize
+            move = True
+        if not self.h_bind and hsize != self.window_height:
+            self.window_height = hsize
+            move = True
+        if move:
+            self.set_position()
 
     def move_u(self, *args, **kwargs) -> None:
         """上へ"""
@@ -482,7 +354,7 @@ class MainWindow(ttk.Frame):
         """下へ"""
         if not self.h_bind:
             return
-        self.window_height = cs_ops.workingarea()[1]
+        _, self.window_height = workingarea()
         self.h_bind = False
         self.set_position()
 
@@ -498,7 +370,7 @@ class MainWindow(ttk.Frame):
         """右へ"""
         if not self.w_bind:
             return
-        self.window_width = cs_ops.workingarea()[0]
+        self.window_width, _ = workingarea()
         self.w_bind = False
         self.set_position()
 
@@ -524,24 +396,26 @@ class MainWindow(ttk.Frame):
             self.cycle = 1000
         print('Cycle: {:.1f}s'.format(self.cycle/1000))
 
+    def switch_title(self, *args, **kwargs):
+        if self.show_status_to_title:
+            self.master.title('PythonMonitor')
+        self.show_status_to_title = not self.show_status_to_title
+        print('Show Status to Title:', self.show_status_to_title)
+
 
 def start() -> None:
-    with OpenHardWareMonitor(
-        os.path.join(TASKMGR_PATH,'OpenHardwareMonitorLib')) as ohm:
+    with OpenHardwareMonitor() as ohm:
         try:
             window = tk.Tk()
             MainWindow(window, 340, 272, ohm)
             window.mainloop()
         except:
             msg = traceback.format_exc()
-            show_notification(msg)
+            show_message_to_notification(msg)
             print(msg)
 
 
 if __name__ == '__main__':
-    import ctypes
-    if ctypes.windll.shell32.IsUserAnAdmin() == 0:
-        cs_ops.error('管理者権限を有効にして実行してください。')
-    del ctypes
-
+    if not isadmin():
+        error('管理者権限を有効にして実行してください。')
     start()

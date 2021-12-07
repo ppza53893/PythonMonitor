@@ -3,9 +3,8 @@ import enum
 import time
 from typing import Tuple
 
-from .systemAPI import error, question, ans_yes, get_battery_status
+from .systemAPI import ans_yes, error, get_battery_status, question
 from .utils import StatusContainer, close_container, import_module
-
 
 __all__ = ['OpenHardwareMonitor']
 
@@ -54,12 +53,12 @@ def sensor_getvaluetoname(value: int) -> Tuple[str, str]:
 
 
 @dataclasses.dataclass
-class OpenHardWareMonitor:
+class OpenHardwareMonitor:
     """
-    OpenHardWareMonitorからの情報を取得する
+    OpenHardwareMonitorからの情報を取得する
     https://github.com/openhardwaremonitor/openhardwaremonitor/tree/master/Hardware
     """
-    dllpath: str
+    dllpath: str = 'OpenHardwareMonitorLib'
     
     def __post_init__(self) -> None:
         Hardware = import_module(
@@ -73,11 +72,11 @@ class OpenHardWareMonitor:
         self._closed = False
 
     def curstatus(self)-> StatusContainer:
-        self.container = StatusContainer()
+        self._container = StatusContainer()
         for sensors in self._handle.Hardware:
             # cpu, ram, ...
             self._parse_sensors(sensors)
-        return self.container
+        return self._container
 
     def _parse_sensors(self, sensors) -> None:
         sensors.Update()
@@ -102,6 +101,8 @@ class OpenHardWareMonitor:
             sensorcontainer = StatusContainer()
             values = dict(
                 index = sensor.Index,
+                name = sensor.Name,
+                type = sensortype,
                 identifier = sensor.Identifier.ToString(),
                 value = sensor.Value,
                 min = sensor.Min,
@@ -110,10 +111,11 @@ class OpenHardWareMonitor:
             sensorcontainer.register('container', values)
             register_dicts[sensortype].append(sensorcontainer)
 
+        keycontainer.register('size', len(register_dicts))
         for st, values in register_dicts.items():
             keycontainer.register(st, values)
         
-        self.container.register(key, keycontainer)
+        self._container.register(key, keycontainer)
 
     def close(self) -> None:
         if self._closed:
@@ -134,10 +136,15 @@ class OpenHardWareMonitor:
     def has_nvidia_gpu(self) -> bool:
         return 'GpuNvidia' in self.curstatus()
     
-    @property
     def select_battery_or_gpu(self) -> bool:
         batteries = get_battery_status().BatteryChargeStatus
-        isin = batteries not in ['NoSystemBattery', 'Unknown']
+        has_battery = batteries not in ['NoSystemBattery', 'Unknown']
+        has_nvgpu = self.has_nvidia_gpu
+        if has_battery and has_nvgpu:
+            result = question('Nvidia GPUを検出しました。バッテリ―状態の代わりに表示しますか?')
+            return result != ans_yes
+        else:
+            return has_battery
 
     def i_cpu_size(self, key: str) -> int:
         status = self.curstatus().CPU
@@ -147,4 +154,3 @@ class OpenHardWareMonitor:
             # 見つからないとき
             self.close()
             error(f'OpenHardWareMonitor: {key}が見つかりませんでした。')
-

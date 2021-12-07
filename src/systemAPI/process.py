@@ -15,12 +15,11 @@ __all__ = [
     'num_processors',
     'cpu_usage',
     'get_current_pids',
-    'c_disk_usage',
-    'memory_usage']
+    'c_disk_usage']
 
 
-PerformanceCounter = TypeVar('PerformanceCounter', diagnostics.PerformanceCounter)
-Process = TypeVar('Process', diagnostics.Process)
+PerformanceCounter = TypeVar('PerformanceCounter')
+Process = TypeVar('Process')
 
 WMI_CLASS_TAG = {
     'Win32_Battery': [
@@ -352,13 +351,13 @@ def cpu_usage() -> List[PerformanceCounter]:
     return cpus
 
 
-def get_current_pids() -> List[Process]:
+def get_current_pids() -> int:
     """Get the current running processes.
 
     Returns:
-        List[Process]: List of Process objects.
+        int: Number of processes.
     """
-    return list(diagnostics.Process.GetProcesses())
+    return len(list(diagnostics.Process.GetProcesses()))
 
 
 def c_disk_usage() -> float:
@@ -370,18 +369,3 @@ def c_disk_usage() -> float:
     total, used, _ = shutil.disk_usage('c:\\')
     return round(100*used / total, 1)
 
-
-def memory_usage(refresh=False) -> float:
-    """Get memory usage.
-
-    Args:
-        refresh (bool, optional): Refresh the global memory variables. Defaults to False.
-
-    Returns:
-        float: Memory usage (%).
-    """
-    global available_memory, total_memory
-    if available_memory is None or refresh:
-        available_memory = diagnostics.PerformanceCounter("Memory", 'Available KBytes', None)
-        total_memory = operating_system().TotalVisibleMemorySize
-    return round(100*(total_memory - available_memory.NextValue())/total_memory, 2)

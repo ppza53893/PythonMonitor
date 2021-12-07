@@ -109,3 +109,8 @@ class StatusContainer:
             return vars(self)
         except:
             return dict()
+
+    def clear(self) -> None:
+        """clear all registered variables"""
+        for k in self._registerd_vars.keys():
+            delattr(self, k)

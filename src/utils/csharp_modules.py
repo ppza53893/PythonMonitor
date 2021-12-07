@@ -24,7 +24,7 @@ Management = import_module("System.Management")
 Forms = import_module("System.Windows.Forms")
 Container = import_module("System.ComponentModel.Primitives", "System.ComponentModel", 'Container')
 Icon, SystemIcons = import_module("System.Drawing", submodule_or_classes=["Icon", "SystemIcons"])
-NetworkInterface = import_module("System.Net.NetworkInformation", submodule_or_classes=["NetworkInterface"])
+NetworkInterface = import_module("System.Net.NetworkInformation", submodule_or_classes="NetworkInterface")
 
 
 system = System
