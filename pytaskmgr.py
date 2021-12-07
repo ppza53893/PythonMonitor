@@ -63,7 +63,7 @@ class MainWindow(ttk.Frame):
         self.time_temp = time.time()
 
         # if has battery & has nvidia gpu
-        bcs = cs_ops.get_battery_status()
+        bcs = cs_ops.get_battery_status().BatteryChargeStatus
         unsupported = ['NoSystemBattery', 'Unknown']
         if self.ohm.has_nvidia_gpu and bcs not in unsupported:
             result = cs_ops.hint_yesno('Nvidia GPUを検出しました。バッテリ―状態の代わりに表示しますか?')
