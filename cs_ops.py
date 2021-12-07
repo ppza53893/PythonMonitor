@@ -482,19 +482,19 @@ def _messagebox(
     return ret
 
 
-error: Callable[[str], NoReturn] = functools.partial(
-    _messagebox,
-    buttontype = forms.MessageBoxButtons.OK,
+error: Callable[[str], NoReturn] = lambda message: _messagebox(
+    message=message,
+    buttontype=forms.MessageBoxButtons.OK,
     icon = forms.MessageBoxIcon.Error,
     exit_ = True)
-info: Callable[[str], int] = functools.partial(
-    _messagebox,
-    buttontype = forms.MessageBoxButtons.OK,
+info: Callable[[str], NoReturn] = lambda message: _messagebox(
+    message=message,
+    buttontype=forms.MessageBoxButtons.OK,
     icon = forms.MessageBoxIcon.Information,
     exit_ = False)
-hint_yesno: Callable[[str], int] = functools.partial(
-    _messagebox,
-    buttontype = forms.MessageBoxButtons.YesNo,
+question: Callable[[str], bool] = lambda message: _messagebox(
+    message=message,
+    buttontype=forms.MessageBoxButtons.YesNo,
     icon = forms.MessageBoxIcon.Exclamation,
     exit_ = False)
 ans_yes: int = forms.DialogResult.Yes

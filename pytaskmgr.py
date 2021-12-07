@@ -468,7 +468,7 @@ class MainWindow(ttk.Frame):
             'Ctrl + B ... 情報の更新速度を0.5s間隔に変更 / 1s間隔に戻す\n\n')
 
         print(msg)
-        cs_ops.info(msg)
+        cs_ops.question(msg)
 
     def move_u(self, *args, **kwargs) -> None:
         """上へ"""
