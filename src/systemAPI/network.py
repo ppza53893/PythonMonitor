@@ -49,7 +49,7 @@ class Network():
             self._received = None
             self._network_wait_count = 0
             return ['nan']*2
-        elif current_sent == self._sent:
+        elif current_sent == self._sent and current_received == self._received:
             self._network_wait_count = 0
             self._network = self._get_networks()
             return ['nan']*2
