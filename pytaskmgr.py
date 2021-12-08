@@ -94,8 +94,12 @@ class MainWindow(ttk.Frame):
             self.table_names = [
                 Name.from_container(nv.Fan[0].container),
                 Name.from_container(nv.Power[0].container),
+                Name(name='GPU RAM Usage', tag='gpu_ram', unit='%'),
                 Name.from_container(nv.Temperature[0].container),
             ]
+            self.height += 20
+            self.table_names[0].name = 'GPU Fan'
+            self.table_names[3].name = 'GPU Temperature'
         # cpus
         self.cpu_temp_table = TableGroup(status.CPU.Temperature, custom_name='CPU Tempeature')
         self.cpu_load_table = TableGroup(status.CPU.Load, custom_name='CPU Usage')
@@ -158,6 +162,8 @@ class MainWindow(ttk.Frame):
             status = [
                 ohm_status.GpuNvidia.Fan[0].container.value,
                 ohm_status.GpuNvidia.Power[0].container.value,
+                ohm_status.GpuNvidia.SmallData[1].container.value \
+                    / ohm_status.GpuNvidia.SmallData[2].container.value * 100,
                 ohm_status.GpuNvidia.Temperature[0].container.value,
             ]
 
@@ -201,7 +207,7 @@ class MainWindow(ttk.Frame):
             cl = set_load_color(value)
         elif name.istag('ac'):
             cl = set_battery_color(name, value)
-        elif name.istag('system'):
+        elif name.istag('system') or name.istag('gpu_ram'):
             cl = set_system_color(value)
         else:
             cl = default_color

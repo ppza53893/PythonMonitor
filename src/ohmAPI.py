@@ -89,7 +89,7 @@ class OpenHardwareMonitor:
 
         i_sensors = sorted(
             list(sensors.Sensors),
-            key=lambda x: '_'.join(x.Identifier.ToString().split('/')[-2:]))
+            key=lambda x: int(x.Identifier.ToString().split('/')[-1]))
         for sensor in i_sensors:
             # get sensortype
             # e.g. Temperature, Load, ...

@@ -94,8 +94,7 @@ ans_yes: int = forms.DialogResult.Yes
 
 
 def show_message_to_notification(
-    message: str,
-    app_icon: str) -> None:
+    message: str) -> None:
     """
     Show a message to the notification area
     
@@ -103,12 +102,7 @@ def show_message_to_notification(
         message (str): The message to show
         app_icon (str): The icon to show the message
     """
-    if os.path.exists(app_icon):
-        icon = Icon(app_icon)
-    else:
-        icon = SystemIcons.Application
-
-    notifyicon.Icon = icon
+    notifyicon.Icon = ICON
     notifyicon.BalloonTipTitle = PYTASKMGR
     notifyicon.BalloonTipText = message
     notifyicon.Visible = True
