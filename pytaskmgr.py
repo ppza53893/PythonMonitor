@@ -85,26 +85,24 @@ class MainWindow(ttk.Frame):
         
         if self.use_battery_mode:
             self.table_names = [
-                Name('AC Status', tag='ac'),
-                Name('Battery', tag='ac', unit='%'),
-                Name('Battery Status', tag='ac'),
+                Name(AC_STATUS, tag='ac'),
+                Name(BATTERY, tag='ac', unit='%'),
+                Name(BATTERY_STATUS, tag='ac'),
             ]
         else:
             nv = status.GpuNvidia
             self.table_names = [
-                Name.from_container(nv.Fan[0].container),
-                Name.from_container(nv.Power[0].container),
-                Name(name='GPU RAM Usage', tag='gpu_ram', unit='%'),
-                Name.from_container(nv.Temperature[0].container),
+                Name.from_container(nv.Fan[0].container).update(name=GPU_FAN, tag='gpu_fan'),
+                Name.from_container(nv.Power[0].container).update(tag='gpu_power'),
+                Name(name=GPU_RAM, tag='gpu_ram', unit='%'),
+                Name.from_container(nv.Temperature[0].container).update(name=GPU_TEMP),
             ]
             self.height += 20
-            self.table_names[0].name = 'GPU Fan'
-            self.table_names[3].name = 'GPU Temperature'
         # cpus
-        self.cpu_temp_table = TableGroup(status.CPU.Temperature, custom_name='CPU Tempeature')
-        self.cpu_load_table = TableGroup(status.CPU.Load, custom_name='CPU Usage')
-        self.cpu_clock_table = TableGroup(status.CPU.Clock, custom_name='CPU Clock')
-        self.cpu_power_table = TableGroup(status.CPU.Power, custom_name='CPU Power')
+        self.cpu_temp_table = TableGroup(status.CPU.Temperature, custom_name=CPU_TEMP)
+        self.cpu_load_table = TableGroup(status.CPU.Load, custom_name=CPU_LOAD)
+        self.cpu_clock_table = TableGroup(status.CPU.Clock, custom_name=CPU_CLOCK)
+        self.cpu_power_table = TableGroup(status.CPU.Power, custom_name=CPU_POWER)
         
         self.table_names += self.cpu_temp_table.names
         self.table_names += self.cpu_load_table.names
@@ -112,11 +110,11 @@ class MainWindow(ttk.Frame):
         self.table_names += self.cpu_power_table.names
         
         _system = [
-            Name('Disk Usage', tag='system', unit='%'),
-            Name('Memory Usage', tag='system', unit='%'),
-            Name('Running Processes'),
-            Name('Network Sent', unit='KB/s'),
-            Name('Network Receive', unit='KB/s'),
+            Name(DISK_USAGE, tag='system', unit='%'),
+            Name(MEMORY_USAGE, tag='system', unit='%'),
+            Name(RUN_PID),
+            Name(NET_SENT, unit='KB/s'),
+            Name(NET_RECV, unit='KB/s'),
         ]
         
         self.table_names += _system
@@ -145,20 +143,20 @@ class MainWindow(ttk.Frame):
         """Get current status.
 
         Collected from:
-            - GPU, CPU, Memory data: Openhardwaremonitor API
-            - Network (from System.Net.NetworkInformation)
-            - Battery (from System.Forms.SystemInformation.PowerStatus)
-            - PIDs (from System.Diagnostics.Process)
+            - GPU, CPU, Memory data: OpenhardwareMonitor
+            - Network System.Net.NetworkInformation
+            - Battery System.Forms.SystemInformation.PowerStatus
+            - PIDs System.Diagnostics.Process
 
         Returns:
             List[str, int]: status
         """
-
         ohm_status = self.ohm.curstatus()
         
         if self.use_battery_mode:
             status = get_battery_status().tolist()
         else:
+            nvidia_smi_update()
             status = [
                 ohm_status.GpuNvidia.Fan[0].container.value,
                 ohm_status.GpuNvidia.Power[0].container.value,
@@ -203,11 +201,15 @@ class MainWindow(ttk.Frame):
         """
         if name.istag('Temperature'):
             cl = set_temperature_color(value)
-        elif name.istag('Load'):
+        elif name.istag('Load') or name.istag('gpu_ram'):
             cl = set_load_color(value)
+        elif name.istag('gpu_power'):
+            cl = set_nvgpu_power_color(value)
+        elif name.istag('gpu_fan'):
+            cl = set_nvgpu_fan_color()
         elif name.istag('ac'):
             cl = set_battery_color(name, value)
-        elif name.istag('system') or name.istag('gpu_ram'):
+        elif name.istag('system'):
             cl = set_system_color(value)
         else:
             cl = default_color
@@ -246,13 +248,13 @@ class MainWindow(ttk.Frame):
             else:
                 id = self.tree.insert('', **insert_kwg)
             
-            if name.name == 'CPU Usage':
+            if name.name == CPU_LOAD:
                 master_usage_id = id
-            elif name.name == 'CPU Power':
+            elif name.name == CPU_POWER:
                 master_power_id = id
-            elif name.name == 'CPU Clock':
+            elif name.name == CPU_CLOCK:
                 master_clock_id = id
-            elif name.name == 'CPU Tempeature':
+            elif name.name == CPU_TEMP:
                 master_temp_id = id
             
             self.id_list.append(id)
@@ -422,6 +424,5 @@ def start() -> None:
 
 
 if __name__ == '__main__':
-    if not isadmin():
-        error('管理者権限を有効にして実行してください。')
+    check_admin()
     start()

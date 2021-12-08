@@ -368,4 +368,3 @@ def c_disk_usage() -> float:
     """
     total, used, _ = shutil.disk_usage('c:\\')
     return round(100*used / total, 1)
-

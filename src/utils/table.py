@@ -1,9 +1,8 @@
 import dataclasses
+from typing import List, Optional, Union
 
-from typing import Optional, List, Union
-
+from ..systemAPI.gpu import *
 from .container import StatusContainer
-
 
 __all__ = [
     'Name',
@@ -13,9 +12,12 @@ __all__ = [
     'set_temperature_color',
     'set_battery_color',
     'set_load_color',
-    'set_system_color',]
+    'set_system_color',
+    'set_nvgpu_power_color',
+    'set_nvgpu_fan_color',]
 
 
+ALLOWED = ['name', 'tag', 'identifier', 'unit']
 @dataclasses.dataclass
 class Name:
     name: str
@@ -28,6 +30,13 @@ class Name:
 
     def istag(self, comapre_tag: str) -> bool:
         return self.tag == comapre_tag
+    
+    def update(self, **kwargs) -> 'Name':
+        for key in kwargs:
+            if key not in ALLOWED:
+                raise ValueError(f'{key} is not supported.')
+            setattr(self, key, kwargs[key])
+        return self
 
     @staticmethod
     def from_container(container: StatusContainer):
@@ -61,7 +70,7 @@ class TableGroup:
                 _p_name += 's'
         else:
             _p_name = self.custom_name
-        self._parent.name = _p_name
+        self._parent = self._parent.update(name = _p_name)
     
     def is_children(self, name: Name) -> bool:
         identifier = name.identifier
@@ -169,3 +178,20 @@ def set_system_color(value: int) -> str:
     # clip value 0 to 255
     value = max(0, min(255, value))
     return _create_color_code(255, value, value)
+
+
+def set_nvgpu_power_color(value: float) -> str:
+    power_limit = gpu_power_limit()
+    if type(power_limit) is float:
+        value_p = value / power_limit * 100
+        return set_temperature_color(value_p)
+    else:
+        return default_color
+
+
+def set_nvgpu_fan_color() -> str:
+    fan_speed = gpu_fan_speed()
+    if type(fan_speed) is float:
+        return set_temperature_color(fan_speed)
+    else:
+        return default_color
