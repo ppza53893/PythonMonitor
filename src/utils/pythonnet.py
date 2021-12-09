@@ -24,30 +24,35 @@ def import_module(
     Returns:
         The module object(s).
     """
-    temp, ext = os.path.splitext(assembly)
+    root, ext = os.path.splitext(assembly)
     if ext == ".dll":
-        assembly = temp
+        assembly = root
+    head, tail = os.path.split(assembly)
+    if head != "" and not head in sys.path:
+        sys.path.append(head)
+    assembly = tail
     # if already imported, return the module object
     if assembly in sys.modules:
-        return sys.modules[assembly]
-    if clr.FindAssembly(assembly) is None:
-        raise ImportError(f"{assembly} not found in CLR")
-
-    clr.AddReference(assembly)
-    
-    module_name = module_name or assembly
-    module_sep = module_name.split(".")
-    if module_sep[0] != 'System':
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError:
-            # https://github.com/pythonnet/pythonnet/issues/678
-            module = __import__(module_name)
+        module = sys.modules[assembly]
     else:
-        module = clr.System
-        for m in module_sep[1:]:
-            module = getattr(module, m)
-    
+        if clr.FindAssembly(assembly) is None:
+            raise ImportError(f"Assembly '{assembly}' not found.")
+
+        clr.AddReference(assembly)
+        
+        module_name = module_name or assembly
+        module_sep = module_name.split(".")
+        if module_sep[0] != 'System':
+            try:
+                module = importlib.import_module(module_name)
+            except ModuleNotFoundError:
+                # https://github.com/pythonnet/pythonnet/issues/678
+                module = __import__(module_name)
+        else:
+            module = clr.System
+            for m in module_sep[1:]:
+                module = getattr(module, m)
+        
     if submodule_or_classes is not None:
         # get the classes or modules from the module
         if isinstance(submodule_or_classes, str):
@@ -78,8 +83,11 @@ def test_import_module():
     test_module_import_error("System.Management")
     test_module_import_error("System.Diagnostics.Process", "System.Diagnostics")
     test_module_import_error("System.Drawing", None, ["Icon", "SystemIcons"])
-    test_module_import_error("OpenHardwareMonitorLib", "OpenHardwareMonitor", 'Hardware')
-    test_module_import_error("OpenHardwareMonitorLib.dll", "OpenHardwareMonitor", 'Hardware')
+
+    # check absolute path
+    ohm = r"C:\process\OpenHardwareMonitorLib.dll"
+    test_module_import_error(ohm, "OpenHardwareMonitor", 'Hardware')
+    test_module_import_error(os.path.splitext(ohm)[0], "OpenHardwareMonitor", 'Hardware')
 
 
 if __name__ == "__main__":
