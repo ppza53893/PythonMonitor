@@ -31,7 +31,6 @@ def import_module(
     if head != "" and not head in sys.path:
         sys.path.append(head)
     assembly = tail
-    # if already imported, return the module object
     if assembly in sys.modules:
         module = sys.modules[assembly]
     else:
