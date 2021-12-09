@@ -7,7 +7,7 @@ from ..utils import StatusContainer
 from ..utils import forms, dispose
 
 
-__all__ = ['alert_on_baloontip', 'get_battery_status']
+__all__ = ['alert_on_balloontip', 'get_battery_status']
 
 
 BATTERY_ALERT_MIN = 35
@@ -36,7 +36,7 @@ class PowerLineStatus(enum.IntEnum):
     Unknown = 255
 
 
-def alert_on_baloontip(
+def alert_on_balloontip(
     remain: float,
     powerline_status: str) -> None:
     global BATTERY_STATUS

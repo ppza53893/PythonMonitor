@@ -274,7 +274,7 @@ class MainWindow(ttk.Frame):
                 foreground=self.determine_color(self.table_names[index], value))
             # alert if battery is low or high
             if self.use_battery_mode and index == 1: # BatteryLife
-                alert_on_baloontip(value, status[0])
+                alert_on_balloontip(value, status[0])
     
         self.master.after(self.cycle, self.update)
 
