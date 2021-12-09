@@ -420,7 +420,7 @@ def start() -> None:
         except:
             msg = traceback.format_exc()
             show_message_to_notification(msg)
-            print(msg)
+            print('\033[38;5;009m '+msg+'\033[0m')
 
 
 if __name__ == '__main__':
