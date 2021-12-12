@@ -1,4 +1,4 @@
-PYTASKMGR = 'PyTaskManager'
+PYTASKMGR = 'PythonMonitor'
 if not __debug__:
     PYTASKMGR += ' (Debug Mode)'
 

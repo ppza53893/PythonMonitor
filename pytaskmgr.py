@@ -51,7 +51,7 @@ class MainWindow(ttk.Frame):
             self.master.iconbitmap(ICON)
 
         # app settings
-        self.master.title('PythonMonitor')
+        self.master.title(PYTASKMGR)
         self.master.attributes("-topmost", self.showtop)
         self.master.protocol("WM_DELETE_WINDOW", self.app_exit)
         self.master.bind('<Control-Key-q>', self.app_exit)
@@ -358,7 +358,7 @@ class MainWindow(ttk.Frame):
             show_message_to_notification(f'ダンプファイルを{fpath}に保存しました。')
 
     def show_hint_message(self, *args, **kwargs):
-        msg = ('使い方:\n\n'
+        msg = ('コマンド:\n\n'
             'Ctrl + Q ... アプリ終了\n'
             'Ctrl + P ... アプリを最前面に固定 or 解除\n'
             'Ctrl + H ... このヒント画面を表示\n'
@@ -458,7 +458,7 @@ class MainWindow(ttk.Frame):
 
     def switch_title(self, *args, **kwargs):
         if self.show_status_to_title:
-            self.master.title('PythonMonitor')
+            self.master.title(PYTASKMGR)
         self.show_status_to_title = not self.show_status_to_title
         print('Show Status to Title:', self.show_status_to_title)
 
