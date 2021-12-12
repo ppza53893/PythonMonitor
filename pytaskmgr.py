@@ -1,10 +1,15 @@
 """PyTaskManager"""
+import ctypes
 import datetime
 import json
 import os
+
+ctypes.windll.ole32.CoInitialize(None)
+
 import tkinter as tk
 import tkinter.ttk as ttk
 import traceback
+from collections import deque
 from typing import List, Union
 
 from src import *
@@ -113,8 +118,8 @@ class MainWindow(ttk.Frame):
             Name(DISK_USAGE, tag='system', unit='%'),
             Name(MEMORY_USAGE, tag='system', unit='%'),
             Name(RUN_PID),
-            Name(NET_SENT, unit='KB/s'),
-            Name(NET_RECV, unit='KB/s'),
+            Name(NET_SENT, tag='network', unit='KB/s'),
+            Name(NET_RECV, tag='network', unit='KB/s'),
         ]
         
         self.table_names += _system
@@ -137,7 +142,6 @@ class MainWindow(ttk.Frame):
         
         # title 
         self.show_status_to_title = True
-
 
     def get_full_status(self) -> List[Union[str, int]]:
         """Get current status.
@@ -235,6 +239,8 @@ class MainWindow(ttk.Frame):
         master_clock_id = ''
         master_temp_id = ''
         
+        self.data_table = {}
+        
         for index, (name, value) in enumerate(zip(self.table_names, status)):
             insert_kwg = dict(index='end', tags=index, text=name.name, values=(adjust_format(value), name.unit))
             if self.cpu_temp_table.is_children(name):
@@ -256,10 +262,30 @@ class MainWindow(ttk.Frame):
                 master_clock_id = id
             elif name.name == CPU_TEMP:
                 master_temp_id = id
-            
+
+            if name.tag == 'network':
+                ins_value = value if not isinstance(value, str) else 0.0
+            else:
+                ins_value = value
+
+            self.data_table[id] = dict(
+                name=name,
+                type_ = type(ins_value),
+                values=deque([0]*29+[ins_value], maxlen=30))
             self.id_list.append(id)
             self.tree.tag_configure(tagname=index, foreground=self.determine_color(name, value))
 
+        self.menu = tk.Menu(self.master, tearoff=False, foreground='white', background='white')
+        self.menu.add_command(
+            label='選択中のデータのグラフを表示',
+            command=self.create_graph_window,
+            state=tk.DISABLED,
+            foreground='#333333')
+        self.menu.add_command(label='ヘルプ', command=self.show_hint_message, foreground='#333333')
+        self.menu.add_separator()
+        self.menu.add_command(label='終了', command=self.app_exit, foreground='#333333')
+
+        self.tree.bind('<Button-3>', self.popup_event)
         self.tree.pack()
 
     def update(self) -> None:
@@ -272,11 +298,37 @@ class MainWindow(ttk.Frame):
             self.tree.tag_configure(
                 tagname=index,
                 foreground=self.determine_color(self.table_names[index], value))
+
+            if self.table_names[index].tag == 'network':
+                ins_value = value if not isinstance(value, str) else 0
+            else:
+                ins_value = value
+
+            self.data_table[table_id]['values'].append(ins_value)
             # alert if battery is low or high
             if self.use_battery_mode and index == 1: # BatteryLife
                 alert_on_balloontip(value, status[0])
     
         self.master.after(self.cycle, self.update)
+    
+    def create_graph_window(self, *args, **kwargs) -> None:
+        selected = self.tree.selection()
+        if has_mpl:
+            show_ids = []
+            for table_id in selected:
+                if self.data_table[table_id]['type_'] is not str:
+                    show_ids.append(table_id)
+            if show_ids:
+                create_graph(self, show_ids, ICON)
+        else:
+            info('matplotlibがインストールされていないため、グラフを表示できません。')
+
+    def popup_event(self, event: tk.Event) -> None:
+        if self.tree.selection():
+            self.menu.entryconfigure(0, state=tk.NORMAL)
+        else:
+            self.menu.entryconfigure(0, state=tk.DISABLED)
+        self.menu.tk_popup(event.x_root, event.y_root)
 
     def app_exit(self, *args, **kwargs) -> None:
         """プログラム終了"""
@@ -420,7 +472,7 @@ def start() -> None:
         except:
             msg = traceback.format_exc()
             show_message_to_notification(msg)
-            print('\033[38;5;009m '+msg+'\033[0m')
+            print(msg)
 
 
 if __name__ == '__main__':
