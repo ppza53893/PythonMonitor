@@ -72,8 +72,11 @@ class Network():
                 time_diff = now - self._time
                 self._time = now
     
-                sent = (current_sent - self._sent) / 1024 * time_diff
-                received = (current_received - self._received) / 1024 * time_diff
+                # convert to kbps
+                # bps = byte diff / time diff
+                # kbps = bps / 1024
+                sent = (current_sent - self._sent) / (1024 * time_diff)
+                received = (current_received - self._received) / (1024 * time_diff)
 
                 self._sent = current_sent
                 self._received = current_received
