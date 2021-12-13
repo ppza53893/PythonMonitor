@@ -62,22 +62,25 @@ class Network():
                 self._reset_wait_count()
                 return NOT_CONNECTED
             elif current_sent == self._sent and current_received == self._received:
-                self._reset_wait_count()
-                self._network = self._get_networks()
-                return NOT_CONNECTED
+                if self._network_wait_count == self.MAX_WAIT_COUNT:
+                    self._reset_wait_count()
+                    self._network = self._get_networks()
+                    return NOT_CONNECTED
+                else:
+                    self._network_wait_count += 1
             else:
                 self._reset_wait_count()
-    
-                now = time.time()
-                time_diff = now - self._time
-                self._time = now
-    
-                # convert to kbps
-                # bps = byte diff / time diff
-                # kbps = bps / 1024
-                sent = (current_sent - self._sent) / (1024 * time_diff)
-                received = (current_received - self._received) / (1024 * time_diff)
 
-                self._sent = current_sent
-                self._received = current_received
-                return [sent, received]
+            now = time.time()
+            time_diff = now - self._time
+            self._time = now
+
+            # convert to kbps
+            # bps = byte diff / time diff
+            # kbps = bps / 1024
+            sent = (current_sent - self._sent) / (1024 * time_diff)
+            received = (current_received - self._received) / (1024 * time_diff)
+
+            self._sent = current_sent
+            self._received = current_received
+            return [sent, received]
