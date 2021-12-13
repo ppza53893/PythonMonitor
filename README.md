@@ -27,8 +27,8 @@ Nvidia GPU搭載の場合は上段3つが次のようになります。バッテ
 
 |名前|内容|
 |---|---|
-|GPU Fan|GPUファンの回転速度を表示します。`nvidia-smi`があれば色付きになります。|
-|GPU Power|現在のGPUの消費電力を表示します。`nvidia-smi`があれば色付きになります。|
+|GPU Fan|GPUファンの回転速度を表示します。<br>`nvidia-smi`があれば色付きになります(pythonwからは無効)。|
+|GPU Power|現在のGPUの消費電力を表示します。<br>`nvidia-smi`があれば色付きになります(pythonwからは無効)|
 |GPU RAM Usage|現在のGPUのメモリ使用率を表示します。|
 |GPU Temperature|GPUの温度を表示します。|
 
