@@ -1,22 +1,7 @@
-import functools
-import inspect
-from typing import Any, Callable, Dict
+from typing import Any, Dict
 
 
 __all__ = ['StatusContainer']
-
-
-def private(func: Callable[..., Any]):
-    """Private function decorator"""
-    @functools.wraps(func)
-    def wrap(self, *args, **kwargs):
-        cls = self.__class__
-        caller = inspect.currentframe().f_back.f_locals
-        if 'self' in caller and cls == caller['self'].__class__:
-            return func(self, *args, **kwargs)
-        raise PermissionError("Cannot call '{}' method outside '{}' class."
-                        .format(func.__name__, cls.__name__))
-    return wrap
 
 
 class StatusContainer:
@@ -55,7 +40,6 @@ class StatusContainer:
     def isempty(self) -> bool:
         return len(self) == 0
 
-    @private
     def _setname(self, name, index) -> str:
         if not hasattr(self, name):
             return name
@@ -75,7 +59,6 @@ class StatusContainer:
         value = dict(value=value, from_register=True)
         setattr(self, self._setname(name, 1), value)
 
-    @private
     def to_(self, value, attr: str):
         assert attr in ['tolist', 'todict']
         if not isinstance(value, StatusContainer):
@@ -103,7 +86,6 @@ class StatusContainer:
         return ret
 
     @property
-    @private
     def _registerd_vars(self) -> dict:
         try:
             return vars(self)
