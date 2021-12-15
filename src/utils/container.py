@@ -1,13 +1,18 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 __all__ = ['StatusContainer']
 
 
 class StatusContainer:
+    __slots__ = ['_holder']
+
+    def __init__(self):
+        self._holder = {}
+
     def __str__(self) -> str:
-        s = 'Registered variables:\n'
-        for k, v in self._registerd_vars.items():
+        s = 'Variables:\n'
+        for k, v in self._holder.items():
             if isinstance(v, StatusContainer):
                 v = '\n\t'+str(v).replace('\n', '\n\t') + '\n'
             elif isinstance(v, (list, tuple)):
@@ -24,17 +29,17 @@ class StatusContainer:
         return str(self)
     
     def __len__(self):
-        return len(self._registerd_vars)
+        return len(self._holder)
 
     def __contains__(self, other: str) -> bool:
-        assert isinstance(other, str), f'Instance targets must be str, not {other}.'
-        return other in self._registerd_vars
-    
-    def __setattr__(self, name: str, value: dict) -> None:
-        if isinstance(value, dict) and 'from_register' in value:
-            super().__setattr__(name, value['value'])
-        else:
-            raise ValueError('You should call setattr method from `register`.')
+        assert type(other) is str, f'Instance targets must be str, not {other}.'
+        return other in self._holder
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self._holder[name]
+        except KeyError:
+            raise AttributeError(f'"{self.__class__.__name__}" object has no attribute "{name}".')
 
     @property
     def isempty(self) -> bool:
@@ -56,8 +61,7 @@ class StatusContainer:
             for k, v in value.items():
                 s.register(k, v)
             value = s
-        value = dict(value=value, from_register=True)
-        setattr(self, self._setname(name, 1), value)
+        self._holder[self._setname(name, 1)] = value
 
     def to_(self, value, attr: str):
         assert attr in ['tolist', 'todict']
@@ -65,10 +69,16 @@ class StatusContainer:
             return value
         return getattr(value, attr)()
 
-    def tolist(self):
-        """deep list"""
+    # XXX: never used?
+    def tolist(self) -> List[Any]:
+        """
+        Convert to StatusContainer to list.
+
+        Returns:
+            List: List of objects.
+        """
         ret = []
-        for t in self._registerd_vars.values():
+        for t in self._holder.values():
             t = self.to_(t, 'tolist')
             if isinstance(t, (list, tuple)):
                 t = [self.to_(_t, 'tolist') for _t in t]
@@ -76,23 +86,16 @@ class StatusContainer:
         return ret
 
     def todict(self) -> Dict[str, Any]:
-        """deep dict"""
+        """
+        Convert to StatusContainer to dict.
+
+        Returns:
+            Dict[str, Any]: Dict of objects.
+        """
         ret = dict()
-        for k, v in self._registerd_vars.items():
+        for k, v in self._holder.items():
             v = self.to_(v, 'todict')
             if isinstance(v, (list, tuple)):
                 v = [self.to_(_v, 'todict') for _v in v]
             ret[k] = v
         return ret
-
-    @property
-    def _registerd_vars(self) -> dict:
-        try:
-            return vars(self)
-        except:
-            return dict()
-
-    def clear(self) -> None:
-        """clear all registered variables"""
-        for k in self._registerd_vars.keys():
-            delattr(self, k)
