@@ -38,6 +38,7 @@ class MainWindow(ttk.Frame):
         if os.path.exists(TCL_PATH):
             self.master.tk.call("source", TCL_PATH)
             self.master.tk.call("set_theme", "dark")
+            use_dark_style()
         
         # init cpu usage
         self.show_hint_message()
@@ -271,7 +272,8 @@ class MainWindow(ttk.Frame):
             self.data_table[id] = dict(
                 name=name,
                 type_ = type(ins_value),
-                values=deque([0]*29+[ins_value], maxlen=30))
+                values = deque([0]*29+[ins_value], maxlen=30),
+                percentage_range = name.unit == '%' or name.unit == '°C')
             self.id_list.append(id)
             self.tree.tag_configure(tagname=index, foreground=self.determine_color(name, value))
 
@@ -299,6 +301,7 @@ class MainWindow(ttk.Frame):
                 tagname=index,
                 foreground=self.determine_color(self.table_names[index], value))
 
+            # TODO: make_tableと同じコードを書いているので関数でまとめる
             if self.table_names[index].tag == 'network':
                 ins_value = value if not isinstance(value, str) else 0
             else:
