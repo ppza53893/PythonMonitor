@@ -12,7 +12,7 @@ __all__ = ["import_module"]
 def import_module(
     assembly: str,
     module_name: Optional[str] = None,
-    submodule_or_classes: Optional[Union[List, str]] = None) -> Union[ModuleType, List[ModuleType]]:
+    submodule_or_classes: Union[List, str, None] = None) -> Union[ModuleType, List[ModuleType]]:
     """
     Import a module from the CLR and return the module object(s).
     
@@ -28,9 +28,15 @@ def import_module(
     if ext == ".dll":
         assembly = root
     head, tail = os.path.split(assembly)
-    if head != "" and not head in sys.path:
-        sys.path.append(head)
-    assembly = tail
+    if head != 'wpf':
+        if head != "" and not head in sys.path:
+            sys.path.append(head)
+        assembly = tail
+    else:
+        if module_name is None:
+            raise ValueError("module_name should be specified if assembly is a WPF project")
+        clr.AddReference(assembly)
+        assembly = module_name
     if assembly in sys.modules:
         module = sys.modules[assembly]
     else:

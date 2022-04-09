@@ -1,20 +1,19 @@
+import inspect
 import os
 import sys
-from typing import NoReturn, Tuple
+from typing import NoReturn, Tuple, Optional
 
-from ..gname import PYTASKMGR
-from ..utils import Icon, SystemIcons, close_container, container, forms
+from src.gname import PYTASKMGR
+from src.utils import Icon, SystemIcons, close_container, container, forms
 
 
-__all__ = [
-    'error',
-    'info',
-    'question',
-    'ans_yes',
-    'show_message_to_notification',
-    'workingarea',
-    'borders',
-    'set_icon']
+__all__ = ['error',
+           'info',
+           'question',
+           'show_message_to_notification',
+           'workingarea',
+           'borders',
+           'set_icon']
 
 
 notifyicon = forms.NotifyIcon(container)
@@ -37,33 +36,46 @@ def set_icon(icon_path: str) -> None:
         ICON = Icon(icon_path)
 
 
-def _messagebox(
-    message: str,
-    buttontype: int,
-    icon: int,
-    exit_: bool):
-    ret =  forms.MessageBox.Show(message, PYTASKMGR, buttontype, icon)
-    if exit_:
-        print(message)
-        close_container()
-        sys.exit(1)
-    return ret
+def set_msg_type(buttontype: int, icon: int, exit_: bool,
+                 window_name: str = PYTASKMGR,
+                 compare_value: Optional[int] = None):
+    """messagebox wrapper."""
+    def wrap_base(func):
+        def wrapper(message: str):
+            result = forms.MessageBox.Show(message, window_name, buttontype, icon)
+            if exit_:
+                close_container()
+                sys.exit(1)
+            if compare_value is not None:
+                return result == compare_value
+            return result
+        
+        # copy docstrings
+        wrapper.__doc__ = func.__doc__
+        wrapper.__module__ = func.__module__
+        wrapper.__name__ = func.__name__
+        wrapper.__signature__ = inspect.signature(func)
+        
+        return wrapper
+    return wrap_base
 
 
+@set_msg_type(buttontype=forms.MessageBoxButtons.OK,
+              icon=forms.MessageBoxIcon.Error,
+              exit_=True)
 def error(message: str) -> NoReturn:
     """
-    Show an error message box
+    Show an error message box, and exit the application.
     
     Args:
         message (str): The message to show
     """
-    _messagebox(
-        message = message,
-        buttontype = forms.MessageBoxButtons.OK,
-        icon = forms.MessageBoxIcon.Error,
-        exit_ = True)
+    pass
 
 
+@set_msg_type(buttontype=forms.MessageBoxButtons.OK,
+              icon=forms.MessageBoxIcon.Information,
+              exit_=False)
 def info(message: str) -> None:
     """
     Show an information message box
@@ -71,30 +83,26 @@ def info(message: str) -> None:
     Args:
         message (str): The message to show
     """
-    _messagebox(
-        message = message,
-        buttontype = forms.MessageBoxButtons.OK,
-        icon = forms.MessageBoxIcon.Information,
-        exit_ = False)
+    pass
 
 
+@set_msg_type(buttontype=forms.MessageBoxButtons.YesNo,
+              icon=forms.MessageBoxIcon.Exclamation,
+              exit_=False,
+              compare_value=forms.DialogResult.Yes)
 def question(message: str) -> bool:
     """
     Show a question message box
     
     Args:
         message (str): The message to show
+    Returns:
+        bool: True if the user clicked "Yes"
     """
-    return _messagebox(
-        message=message,
-        buttontype=forms.MessageBoxButtons.YesNo,
-        icon=forms.MessageBoxIcon.Exclamation,
-        exit_=False)
-ans_yes: int = forms.DialogResult.Yes
+    pass
 
 
-def show_message_to_notification(
-    message: str) -> None:
+def show_message_to_notification(message: str) -> None:
     """
     Show a message to the notification area
     
@@ -131,4 +139,3 @@ def borders() -> Tuple[int, int]:
     frame_border = forms.SystemInformation.FrameBorderSize
     border = forms.SystemInformation.BorderSize
     return frame_border, border
-

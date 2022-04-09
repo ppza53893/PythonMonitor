@@ -5,9 +5,16 @@
 趣味で作ったアプリケーションです。[qiitaで記事](https://qiita.com/ppza53893/items/6bd3c5923376f348889b)にもしてます。
 
 
-# テーブル内容
-<div style="text-align: center;">
-<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/83454a17-7cb8-b03c-35a5-c25e84be3278.jpeg"></div>
+# 特徴
+- バッテリー、CPU情報、ネットワーク情報などが一度の画面で見れる
+  - NvidiaGPU搭載のPCならGPUの電力やファン速度、温度なども表示
+- 使用率がカラーでわかる(※一部)
+- グラフ化に対応
+- Windowsのテーマに追従してテーマが変わる(設定で無効可)
+
+# 見本
+
+<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/d297adfe-5daa-5993-249c-24803713e554.jpeg">&emsp;&emsp;<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/d447e161-7bcf-3486-416e-d81bd7a947c7.jpeg">
 
 |名前|内容|
 |---|---|
@@ -34,8 +41,8 @@ Nvidia GPU搭載の場合は上段3つが次のようになります。バッテ
 
 ## コマンド
 
-<div style="text-align: center;">
-<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/f661fdf9-02e6-47e8-480b-47403374fe1e.jpeg"></div>
+<div style="text-align: center;">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/72b6e408-58f0-6a2a-c43a-2d7255715b0f.jpeg"></div>
 
 - Ctrl + Q …プログラムを終了します
 - Ctrl + P …最前面に固定を解除します。デフォルトでは固定されていません。再び押すと元に戻ります。
@@ -46,26 +53,26 @@ Nvidia GPU搭載の場合は上段3つが次のようになります。バッテ
 - Ctrl + B …更新間隔を0.5sにします。起動時は1s間隔です。再び押すと元に戻ります。
 - Ctrl + T …タイトル表示を「CPU使用率、CPU温度」、または通常のタイトルに切り替えます。
 
-## リアルタイムでグラフ表示
+## グラフ表示
 
-<div style="text-align: center;">
-<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/355856f3-5f60-5ae0-d796-7a7f691a5b05.jpeg"></div>
+<div style="text-align: center;">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/01249515-b72b-3850-8a2b-3109657cfa79.jpeg"></div>
 
 `Value`が文字列でないものについては、右クリックすると「選択中のデータのグラフを表示」というものを押すことができます。
 これをクリックすると、別ウィンドウでグラフが表示されます。
 
-<div style="text-align: center;">
-<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/12929ddd-1770-63b7-35e2-eff04dd09a34.jpeg"></div>
+<div style="text-align: center;">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/cda9ae28-72b9-1043-f1a4-8cd72efe586f.jpeg"></div>
 
 複数選択状態であれば、まとめて表示されます。
 
-<div style="text-align: center;">
-<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/2dbd6792-fe1f-049d-b55d-afd0d3b6f358.jpeg"></div>
+<div style="text-align: center;">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+<img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/6ee96c59-3e37-92f5-16dd-64373ac85ae1.jpeg"></div>
 
 ちなみに、こちらにもコマンドがあり、`Ctrl + P`と`Ctrl + R`があります。意味についてはメインウィンドウと同様です。
 
 ### 注意点
-- Pythonの使用上、グラフが多すぎるとラグが発生します。メインウィンドウのデータ更新はほぼ1s間隔ですが、グラフが多いと結構重くなるので注意してください。
+- Pythonの仕様([GIL](https://docs.python.org/ja/3/glossary.html#term-global-interpreter-lock))上、グラフが多すぎるとラグが発生します。メインウィンドウのデータ更新はほぼ1s間隔ですが、グラフが多いと結構重くなるので注意してください。
 - グラフウィンドウは最大10個まで、1画面で表示できるグラフの最大数も10個です。
 
 
@@ -76,13 +83,9 @@ Python 3.7、3.8で動作確認済みです。3.9はpythonnetが動かないた�
 pip install pythonnet matplotlib
 ```
 
-
 ## 1.DLLのダウンロード
 [Open Hardware Monitor](https://openhardwaremonitor.org/downloads/)をダウンロードして、解凍した中身の`OpenHardwareMonitorLib`をpythonコードのあるディレクトリ上に置きます
 
-### 任意
-- [azure theme](https://github.com/rdbende/Azure-ttk-theme): 同じディレクトリ上に置いておくとテーマが上のスクリーンショットのようになります
-- アイコン(任意): `shared.ico`という名前で同じディレクトリ上に置いておくと、アイコンが変わります。
 
 ## 2. 管理者権限で起動
 ここについては色々あります。一応3パターン紹介しておきます
@@ -101,8 +104,50 @@ pythonw.exe pytaskmgr.py
 ```
 を作成し(引数等については1と同じ)作製したbatファイルのショートカットを作成、ショートカットの詳細設定で管理者権限で起動にチェックを入れます。
 
+# 設定
+コマンドラインから起動する場合、オプションが選べます。
+
+|名前|内容|
+|---|---|
+|`--gpu`|GPU使用率 (Engine 3D)も表示するかどうか設定します。値はPerformanceCounterからとってきているので、有効にした状態で起動すると更新間隔が遅くなります。<br><img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/90dabc7a-5bc8-1a38-596b-add7564e3a59.jpeg">|
+|`--theme`|アプリのテーマを指定できます。種類は`light`, `dark`, `system`の3種類で、`system`は使っているwindowsのシステムに追従する形になります。<br>Light:<br><img src="https://qiita-image-store.s3.ap-northeast-1.amazonaws.com/0/783413/be734fe7-f602-28d5-a51c-87cfa7255b73.jpeg">|
+
+
+# 使ったこと
+趣味をつめこんだのでいろいろバックでやってます。
+- COMエラー回避(tkinter & clr & matplotlibで衝突するため)
+    - `pytaskmgr.py`
+- レジストリからの配色取得、Windowsのテーマ取得
+    - モードに応じた自動配色(グラフも対応してます)
+    - `src/systemAPI/registry.py`, `src/utils/table.py`
+- Tkinterのスタイル改造
+    -  `src/utils/table.py`
+- 高Dpi対応
+    -  `src/systemAPI/c_api.py`
+-  Dpi変化によるサイズ(画面サイズ、フォント等も含め)の自動変化
+    -  DPIの異なる画面に映る/画面の拡大を変化した後自動リサイズします
+    -  `src/systemAPI/c_api.py`
+-  管理者権限かの判断
+    -  `src/windows.py`
+- nvidia-smiからのデータ取得(色を付けるため、データの値はOpenhardwareMonitorからです。)
+    - `src/systemAPI/gpu.py`
+- GPU使用率の取得(PerformanceCounter + regex)
+    - `src/systemAPI/gpu.py`
+- ネットワーク速度取得
+    - `src/systemAPI/network.py`
+- バッテリー状態取得
+    - `src/systemAPI/powerline.py`
+- メッセージボックス表示
+    - `src/systemAPI/win_forms.py`
+- 表示するグラフ数に応じたレイアウト変更
+    - `src/mpl_graph.py`
+
 # バグ
-- ~~バッテリー搭載PCについて、初回起動時に電源コードを抜くとなぜかエラーもなく勝手に終了します。理由は分かってないです…~~ タスクスケジューラの設定で解決します。
 - マルチGPUは手元に環境がないので、もしかしたらエラーが出るかもしれません。
 
 何かバグがあればissueに投げてください。時間があれば直していきます。
+
+
+# 今後
+- 殆どがOpenHardwareMonitorに依存しているので、フルスクラッチで自分で書こうかなとも考えてます
+- pythonでの限界を感じます…

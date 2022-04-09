@@ -3,8 +3,8 @@ import enum
 import time
 from typing import Tuple
 
-from .systemAPI import ans_yes, error, get_battery_status, question
-from .utils import StatusContainer, close_container, import_module
+from src.systemAPI import error, get_battery_status, question
+from src.utils import StatusContainer, close_container, import_module
 
 __all__ = ['OpenHardwareMonitor']
 
@@ -38,18 +38,25 @@ class SensorType(enum.IntEnum):
 
 
 sensortype_prefix = [
-    'V', 'MHz', '°C', '%', 'RPM', 'L/h', '%', '%', 1, 'W', 'GB', 'MB', 'MB']
+    'V', 'MHz', '°C', '%', 'RPM', 'L/h', '%', '%', '', 'W', 'GB', 'MB', 'MB']
 
 
 def hardware_getvaluetoname(value: int) -> str:
     for k, v in HardWareType.__members__.items():
-        if v == value: return k
+        if v == value:
+            return k
 
 
 def sensor_getvaluetoname(value: int) -> Tuple[str, str]:
     for k, v in SensorType.__members__.items():
         if v == value:
             return k, sensortype_prefix[v]
+
+
+class ModeResult:
+    def __init__(self, battery: bool, gpu: bool):
+        self.battery = battery
+        self.gpu = gpu
 
 
 @dataclasses.dataclass
@@ -59,22 +66,36 @@ class OpenHardwareMonitor:
     https://github.com/openhardwaremonitor/openhardwaremonitor/tree/master/Hardware
     """
     dllpath: str = 'OpenHardwareMonitorLib'
+    enable_cpu: bool = True
+    enable_ram: bool = True
+    enable_gpu: bool = True
     
     def __post_init__(self) -> None:
         Hardware = import_module(
             self.dllpath, "OpenHardwareMonitor", 'Hardware')
 
         self._handle = Hardware.Computer()
-        self._handle.CPUEnabled = True
-        self._handle.RAMEnabled = True
-        self._handle.GPUEnabled = True
+        self._handle.CPUEnabled = self.enable_cpu
+        self._handle.RAMEnabled = self.enable_ram
+        self._handle.GPUEnabled = self.enable_gpu
         self._handle.Open()
         self._closed = False
-
-    def curstatus(self)-> StatusContainer:
         self._container = StatusContainer()
+
+    def __call__(self):
+        return self._curstatus()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, *args, **kwargs):
+        if not self._closed:
+            self.close()
+
+    def _curstatus(self)-> StatusContainer:
+        if not self._container.isempty:
+            self._container.clear()
         for sensors in self._handle.Hardware:
-            # cpu, ram, ...
             self._parse_sensors(sensors)
         return self._container
 
@@ -124,33 +145,32 @@ class OpenHardwareMonitor:
         self._handle.Close()
         close_container()
         self._closed = True
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, *args, **kwargs):
-        if not self._closed:
-            self.close()
 
     @property
     def has_nvidia_gpu(self) -> bool:
-        return 'GpuNvidia' in self.curstatus()
-    
+        return 'GpuNvidia' in self._get_container()
+
     def select_battery_or_gpu(self) -> bool:
         batteries = get_battery_status().BatteryChargeStatus
         has_battery = batteries not in ['NoSystemBattery', 'Unknown']
         has_nvgpu = self.has_nvidia_gpu
         if has_battery and has_nvgpu:
             result = question('Nvidia GPUを検出しました。バッテリ―状態の代わりに表示しますか?')
-            return result != ans_yes
+            return result
         else:
             return has_battery
 
     def i_cpu_size(self, key: str) -> int:
-        status = self.curstatus().CPU
+        status = self._get_container().CPU
         if key in status:
             return len(getattr(status, key))
         else:
             # 見つからないとき
             self.close()
             error(f'OpenHardWareMonitor: {key}が見つかりませんでした。')
+
+    def _get_container(self):
+        if not self._container.isempty:
+            return self._container
+        else:
+            return self._curstatus()

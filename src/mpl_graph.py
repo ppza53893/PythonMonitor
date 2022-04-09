@@ -5,55 +5,44 @@ import os
 import random
 import tkinter as tk
 import tkinter.ttk as ttk
-from typing import List
+from typing import List, Optional
 
-try:
-    import matplotlib.pyplot as plt
-    import numpy as np
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    from matplotlib.collections import PolyCollection
-except (ImportError, ModuleNotFoundError):
-    has_mpl = False
-else:
-    has_mpl = True
-    cm = plt.get_cmap('gist_rainbow', 100)
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.collections import PolyCollection
 
-from .gname import PYTASKMGR
-from .systemAPI import info
+from src.gname import PYTASKMGR
+from src.systemAPI import info, dpi_changed
+from src.utils import logger, ctrl
 
-__all__ = ["create_graph", "has_mpl", "use_dark_style"]
-
-
+plt.rcParams['ytick.direction'] = 'in'
+CMAP = plt.get_cmap('gist_rainbow', 100)
 RUNNING_GRAPHS = 0
 MAX_SHOW = 10
 
-def create_graph(mainwindow: ttk.Frame, target_ids: List[str], icon: str) -> bool:
+
+def create_graph(mainwindow: ttk.Frame,
+                 target_ids: List[str],
+                 icon: str) -> Optional['MplGraphs']:
     if RUNNING_GRAPHS > MAX_SHOW:
         info("表示中のグラフが多すぎます。")
     elif len(target_ids) > MAX_SHOW:
         info("同時に表示可能なグラフ数は10個までです。")
     else:
-        MplGraphs(mainwindow, target_ids, icon)
+        return MplGraphs(mainwindow, target_ids, icon)
 
 
 def count_running_graphs():
     global RUNNING_GRAPHS
     RUNNING_GRAPHS += 1
+    logger.debug(f"Running graph: {RUNNING_GRAPHS}")
 
 
 def remove_running_graphs():
     global RUNNING_GRAPHS
     RUNNING_GRAPHS -= 1
-
-
-def use_dark_style():
-    if has_mpl:
-        plt.rcParams['text.color'] = '0.9'
-        plt.rcParams['figure.facecolor'] = '#333333'
-        plt.rcParams['axes.facecolor'] = '#333333'
-        plt.rcParams['axes.edgecolor'] = '#737373'
-        plt.rcParams['xtick.color'] = '0.9'
-        plt.rcParams['ytick.color'] = '0.9'
+    logger.debug(f"Running graph: {RUNNING_GRAPHS}")
 
 
 @dataclasses.dataclass
@@ -61,7 +50,7 @@ class MplGraphs:
     """
     show realtime data graph.
     """
-    mainwindow : ttk.Frame # pytaskmgr.py -> MainWindow
+    mainwindow : Optional[ttk.Frame] # pytaskmgr.py -> MainWindow
     target_ids: List[str]
     icon: str
 
@@ -71,8 +60,8 @@ class MplGraphs:
         if os.path.exists(self.icon):
             self.master.iconbitmap(self.icon)
         self.master.protocol("WM_DELETE_WINDOW", self.app_exit)
-        self.master.bind('<Control-Key-r>', self.switch_window_transparency)
-        self.master.bind('<Control-Key-p>', self.switch_topmost)
+        self.master.bind(ctrl.r, self.switch_window_transparency)
+        self.master.bind(ctrl.p, self.switch_topmost)
 
         # keep tops
         # used: self.switch_topmost
@@ -100,14 +89,18 @@ class MplGraphs:
                 self.rows = math.ceil(table_length / 3)
                 self.cols = 3
             self.title_at = 'axes'
-            self.master.geometry(f'{360*self.cols}x{180*self.rows}')
         else:
             self.rows = self.cols = 1
             self.title_at = 'bar'
-            self.master.geometry('360x120')
+        col = self.mainwindow._int_factor(360*self.cols)
+        row = self.mainwindow._int_factor(180*self.rows)
+        self.master.geometry(f'{col}x{row}')
 
         # title(init)
         self.master.title(PYTASKMGR)
+        
+        # destroy
+        self.destroy_flag = False
 
         self.initialize_graph()
         self.update_data()
@@ -129,13 +122,16 @@ class MplGraphs:
         r1, r2 = itertools.tee(range(self.rows*self.cols))
         
         self.key_list = [random.randint(1, 100) for _ in r1]
-        self.polys = [PolyCollection([], facecolors=cm(k-1), alpha=0.2) for k in self.key_list]
-
+        self.polys = [PolyCollection([], facecolors=CMAP(k-1), alpha=0.2) for k in self.key_list]
         # default axes settings
+        self.theme_color = self.mainwindow.ttk_style.colors
+        self.current_mode = self.mainwindow.ttk_style.current_mode
+        self.fig.set_facecolor(self.theme_color.background)
         row_count = 0
         for i in r2:
             axes = self.axs[row_count, i % self.cols]
             axes.add_collection(self.polys[i])
+            self.set_color(axes)
             # set xlim
             axes.set_xlim(0, 29)
             # xaxis -> invisible
@@ -146,7 +142,25 @@ class MplGraphs:
             if (i+1) % self.cols == 0:
                 row_count += 1
 
+    def set_color(self, axes):
+        axes.set_facecolor(self.theme_color.background)
+        axes.tick_params(axis='both',
+                        which='both',
+                        color = self.theme_color.heading,
+                        labelcolor=self.theme_color.foreground)
+        for spine in axes.spines.values():
+            spine.set_edgecolor(self.theme_color.heading)
+
+    def dpi_changed(self):
+        return dpi_changed(handler=self.master.winfo_id(),
+                           current_dpi=self.master.winfo_pixels('1i'))
+
     def update_data(self):
+        bg_changed = self.current_mode != self.mainwindow.ttk_style.current_mode
+        if bg_changed:
+            self.current_mode = self.mainwindow.ttk_style.current_mode
+            self.theme_color = self.mainwindow.ttk_style.colors
+            self.fig.set_facecolor(self.theme_color.background)
         tables = self.mainwindow.data_table
         row_count = 0
         for i, tid in enumerate(self.target_ids):
@@ -161,7 +175,7 @@ class MplGraphs:
                 self.lines[i] = axes.plot(
                     x, y,
                     '-',
-                    color=cm(self.key_list[i]))[0]
+                    color=CMAP(self.key_list[i]))[0]
             else:
                 self.lines[i].set_ydata(y)
             
@@ -181,6 +195,8 @@ class MplGraphs:
                 _ma += 1
                 r = [_mi, _ma]
             axes.set_ylim(r)
+            if bg_changed:
+                self.set_color(axes)
             
             # set title
             cur = table['values'][-1]
@@ -190,7 +206,7 @@ class MplGraphs:
                 cur = int(cur)
             table_title = table['name'].name + ': {} {}'.format(cur, table['name'].unit)
             if self.title_at == 'axes':
-                axes.set_title(table_title, fontsize=8)
+                axes.set_title(table_title, fontsize=8, color=self.theme_color.foreground)
             else:
                 if self.showtop:
                     table_title = '*' + table_title
@@ -208,6 +224,7 @@ class MplGraphs:
         remove_running_graphs()
         plt.close(self.fig)
         self.master.destroy()
+        self.destroy_flag = True
 
     def switch_topmost(self, *args, **kwargs) -> None:
         """ウィンドウ最前面固定の有効/無効"""
