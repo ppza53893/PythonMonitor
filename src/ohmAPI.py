@@ -1,7 +1,7 @@
 import dataclasses
 import enum
 import time
-from typing import Tuple
+from typing import Tuple, Union
 
 from src.systemAPI import error, get_battery_status, question
 from src.utils import StatusContainer, close_container, import_module
@@ -150,7 +150,7 @@ class OpenHardwareMonitor:
     def has_nvidia_gpu(self) -> bool:
         return 'GpuNvidia' in self._get_container()
 
-    def select_battery_or_gpu(self) -> bool:
+    def select_battery_or_gpu(self) -> Union[bool, None]:
         batteries = get_battery_status().BatteryChargeStatus
         has_battery = batteries not in ['NoSystemBattery', 'Unknown']
         has_nvgpu = self.has_nvidia_gpu
@@ -158,7 +158,12 @@ class OpenHardwareMonitor:
             result = question('Nvidia GPUを検出しました。バッテリ―状態の代わりに表示しますか?')
             return result
         else:
-            return has_battery
+            if has_nvgpu:
+                return False
+            elif has_battery:
+                return True
+            else:
+                return None
 
     def i_cpu_size(self, key: str) -> int:
         status = self._get_container().CPU

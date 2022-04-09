@@ -90,35 +90,40 @@ class MainWindow(ttk.Frame):
                 
         # window
         self.window_width, self.window_height = workingarea()
-        
+
+        # table names
+        status = self.ohm()
+
         # dpi scales
         if self.master.winfo_pixels('1i') != 96:
             *self.dpi_factors, self.current_dpi = getDpiFactor(self.master.winfo_id(), 96)
         else:
             self.dpi_factors = (1,1)
             self.current_dpi = 96
+
+        if self.use_battery_mode is not None:
+            if self.use_battery_mode:
+                self.table_names = [Name(AC_STATUS, tag='ac'),
+                                    Name(BATTERY, tag='ac', unit='%'),
+                                    Name(BATTERY_STATUS, tag='ac')]
+            else:
+                nv = status.GpuNvidia
+                self.table_names = [
+                    Name.from_container(nv.Fan[0].container).update(name=GPU_FAN, tag='gpu_fan'),
+                    Name.from_container(nv.Power[0].container).update(tag='gpu_power'),
+                    Name(name=GPU_RAM, tag='gpu_ram', unit='%'),
+                    Name.from_container(nv.Temperature[0].container).update(name=GPU_TEMP),
+                ]
+                self.defheight += 20
+        else:
+            self.defheight -= 60
+            self.table_names = []
+
         self.width, self.height = map(lambda p: int(p[0]*p[1]), zip((self.defwidth, self.defheight), self.dpi_factors))
 
         # ttk style
         self.ttk_style = StyleWatch(self.master, min(self.dpi_factors), self.theme)
 
-        # table names
-        status = self.ohm()
-        
-        if self.use_battery_mode:
-            self.table_names = [Name(AC_STATUS, tag='ac'),
-                                Name(BATTERY, tag='ac', unit='%'),
-                                Name(BATTERY_STATUS, tag='ac')]
-        else:
-            nv = status.GpuNvidia
-            self.table_names = [
-                Name.from_container(nv.Fan[0].container).update(name=GPU_FAN, tag='gpu_fan'),
-                Name.from_container(nv.Power[0].container).update(tag='gpu_power'),
-                Name(name=GPU_RAM, tag='gpu_ram', unit='%'),
-                Name.from_container(nv.Temperature[0].container).update(name=GPU_TEMP),
-            ]
-            self.height += self._int_factor(20)
-        
         # gpus
         if self.gpu3d:
             self.gpu = NetGPU()
@@ -187,17 +192,20 @@ class MainWindow(ttk.Frame):
         """現在の状態を取得"""
         ohm_status = self.ohm()
         
-        if self.use_battery_mode:
-            status = get_battery_status().tolist()
+        if self.use_battery_mode is not None:
+            if self.use_battery_mode:
+                status = get_battery_status().tolist()
+            else:
+                nvidia_smi_update()
+                status = [
+                    ohm_status.GpuNvidia.Fan[0].value,
+                    ohm_status.GpuNvidia.Power[0].value,
+                    ohm_status.GpuNvidia.SmallData[1].value \
+                        / ohm_status.GpuNvidia.SmallData[2].value * 100,
+                    ohm_status.GpuNvidia.Temperature[0].value,
+                ]
         else:
-            nvidia_smi_update()
-            status = [
-                ohm_status.GpuNvidia.Fan[0].value,
-                ohm_status.GpuNvidia.Power[0].value,
-                ohm_status.GpuNvidia.SmallData[1].value \
-                    / ohm_status.GpuNvidia.SmallData[2].value * 100,
-                ohm_status.GpuNvidia.Temperature[0].value,
-            ]
+            status = []
         if self.gpu3d:
             status += [self.gpu()]
 
