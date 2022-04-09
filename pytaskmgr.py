@@ -1,47 +1,53 @@
 """PyTaskManager"""
+import argparse
+from cProfile import label
 import ctypes
+# to STA thread
+ctypes.windll.ole32.CoInitialize(None)
+
 import datetime
 import json
 import os
-
-ctypes.windll.ole32.CoInitialize(None)
+import traceback
+from collections import deque
+from functools import partialmethod
+from typing import List, Union, Optional
 
 import tkinter as tk
 import tkinter.ttk as ttk
-import traceback
-from collections import deque
-from typing import List, Union
 
 from src import *
+init_process()
 
 TASKMGR_PATH = os.path.split(os.path.abspath(__file__))[0]
-ICON = os.path.join(TASKMGR_PATH, 'shared.ico')
-TCL_PATH = os.path.join(TASKMGR_PATH, 'azure.tcl')
+ICON = os.path.join(TASKMGR_PATH, 'app.ico')
 set_icon(ICON)
 
 
 class MainWindow(ttk.Frame):
-    def __init__(
-        self,
-        master: tk.Tk,
-        width: int,
-        height: int,
-        ohm: OpenHardwareMonitor) -> None:
+    def __init__(self,
+                 master: tk.Tk,
+                 width: int,
+                 height: int,
+                 ohm: OpenHardwareMonitor,
+                 gpu3d: bool = False,
+                 theme: str = 'system') -> None:
         super().__init__(master)
         
         self.master = master
+        self.master.call('tk', 'scaling', 1.0)
         self.ohm = ohm
+        self.defwidth, self.defheight = width, height
         self.height = height
         self.width = width
+        self.gpu3d = gpu3d
+        self.theme = theme
+        if gpu3d:
+            logger.debug('gpu3d is now enabled. Cycles will be slow.')
         self.pack()
-
-        if os.path.exists(TCL_PATH):
-            self.master.tk.call("source", TCL_PATH)
-            self.master.tk.call("set_theme", "dark")
-            use_dark_style()
-        
+                
         # init cpu usage
-        self.show_hint_message()
+        #self.show_hint_message()
         # initialize
         self._initialize_variables()
         # move to default place
@@ -55,17 +61,17 @@ class MainWindow(ttk.Frame):
         self.master.title(PYTASKMGR)
         self.master.attributes("-topmost", self.showtop)
         self.master.protocol("WM_DELETE_WINDOW", self.app_exit)
-        self.master.bind('<Control-Key-q>', self.app_exit)
-        self.master.bind('<Control-Key-p>', self.switch_topmost)
-        self.master.bind('<Control-Key-s>', self.dump_current_status)
-        self.master.bind('<Control-Key-h>', self.show_hint_message)
-        self.master.bind('<Control-Key-k>', self.move_u)
-        self.master.bind('<Control-Key-m>', self.move_d)
-        self.master.bind('<Control-Key-j>', self.move_l)
-        self.master.bind('<Control-Key-l>', self.move_r)
-        self.master.bind('<Control-Key-r>', self.switch_window_transparency)
-        self.master.bind('<Control-Key-b>', self.switch_cycle)
-        self.master.bind('<Control-Key-t>', self.switch_title)
+        self.master.bind(ctrl.q, self.app_exit)
+        self.master.bind(ctrl.p, self.switch_topmost)
+        self.master.bind(ctrl.s, self.dump_current_status)
+        self.master.bind(ctrl.h, self.show_hint_message)
+        self.master.bind(ctrl.k, self.move_u)
+        self.master.bind(ctrl.m, self.move_d)
+        self.master.bind(ctrl.j, self.move_l)
+        self.master.bind(ctrl.l, self.move_r)
+        self.master.bind(ctrl.r, self.switch_window_transparency)
+        self.master.bind(ctrl.b, self.switch_cycle)
+        self.master.bind(ctrl.t, self.switch_title)
         self.master.resizable(width=False, height=False)
 
         # テーブル作成
@@ -75,26 +81,34 @@ class MainWindow(ttk.Frame):
         self.update()
 
     def _initialize_variables(self):
-        """Initialize.
-        """
+        """Initialize variables."""
         # battery
         self.use_battery_mode = self.ohm.select_battery_or_gpu()
         
         # networks
         self.network = Network()
-        
+                
         # window
         self.window_width, self.window_height = workingarea()
+        
+        # dpi scales
+        if self.master.winfo_pixels('1i') != 96:
+            *self.dpi_factors, self.current_dpi = getDpiFactor(self.master.winfo_id(), 96)
+        else:
+            self.dpi_factors = (1,1)
+            self.current_dpi = 96
+        self.width, self.height = map(lambda p: int(p[0]*p[1]), zip((self.defwidth, self.defheight), self.dpi_factors))
+
+        # ttk style
+        self.ttk_style = StyleWatch(self.master, min(self.dpi_factors), self.theme)
 
         # table names
-        status = self.ohm.curstatus()
+        status = self.ohm()
         
         if self.use_battery_mode:
-            self.table_names = [
-                Name(AC_STATUS, tag='ac'),
-                Name(BATTERY, tag='ac', unit='%'),
-                Name(BATTERY_STATUS, tag='ac'),
-            ]
+            self.table_names = [Name(AC_STATUS, tag='ac'),
+                                Name(BATTERY, tag='ac', unit='%'),
+                                Name(BATTERY_STATUS, tag='ac')]
         else:
             nv = status.GpuNvidia
             self.table_names = [
@@ -103,7 +117,15 @@ class MainWindow(ttk.Frame):
                 Name(name=GPU_RAM, tag='gpu_ram', unit='%'),
                 Name.from_container(nv.Temperature[0].container).update(name=GPU_TEMP),
             ]
-            self.height += 20
+            self.height += self._int_factor(20)
+        
+        # gpus
+        if self.gpu3d:
+            self.gpu = NetGPU()
+            self.gpu.setup()
+            self.table_names.append(Name(GPU_LOAD, tag='gpu_load', unit='%'))
+            self.height += self._int_factor(20)
+        
         # cpus
         self.cpu_temp_table = TableGroup(status.CPU.Temperature, custom_name=CPU_TEMP)
         self.cpu_load_table = TableGroup(status.CPU.Load, custom_name=CPU_LOAD)
@@ -144,96 +166,76 @@ class MainWindow(ttk.Frame):
         # title 
         self.show_status_to_title = True
 
-    def get_full_status(self) -> List[Union[str, int]]:
-        """Get current status.
+    def _int_factor(self, value: Union[int, float]) -> int:
+        return int(value * min(self.dpi_factors))
 
-        Collected from:
-            - GPU, CPU, Memory data: OpenhardwareMonitor
-            - Network System.Net.NetworkInformation
-            - Battery System.Forms.SystemInformation.PowerStatus
-            - PIDs System.Diagnostics.Process
+    def update_scales(self):
+        if dpi_changed(self.master.winfo_id(), self.current_dpi):
+            *self.dpi_factors, self.current_dpi = getDpiFactor(self.master.winfo_id(), 96)
+            self.width, self.height = map(lambda p: int(p[0]*p[1]), zip((self.defwidth, self.defheight), self.dpi_factors))
 
-        Returns:
-            List[str, int]: status
-        """
-        ohm_status = self.ohm.curstatus()
+            self.ttk_style.dpi_factor = min(self.dpi_factors)
+            self.ttk_style.rescale()
+            self.ttk_style.apply(force = True)
+            self.master.call('tk', 'scaling', 1.0)
+            self.master.resizable(width=True, height=True)
+            self.master.geometry(f'{self.width}x{self.height}')
+            self.master.resizable(width=False, height=False)
+            
+
+    def get_all_status(self) -> List[Union[str, int]]:
+        """現在の状態を取得"""
+        ohm_status = self.ohm()
         
         if self.use_battery_mode:
             status = get_battery_status().tolist()
         else:
             nvidia_smi_update()
             status = [
-                ohm_status.GpuNvidia.Fan[0].container.value,
-                ohm_status.GpuNvidia.Power[0].container.value,
-                ohm_status.GpuNvidia.SmallData[1].container.value \
-                    / ohm_status.GpuNvidia.SmallData[2].container.value * 100,
-                ohm_status.GpuNvidia.Temperature[0].container.value,
+                ohm_status.GpuNvidia.Fan[0].value,
+                ohm_status.GpuNvidia.Power[0].value,
+                ohm_status.GpuNvidia.SmallData[1].value \
+                    / ohm_status.GpuNvidia.SmallData[2].value * 100,
+                ohm_status.GpuNvidia.Temperature[0].value,
             ]
+        if self.gpu3d:
+            status += [self.gpu()]
 
-        status += [p.container.value for p in ohm_status.CPU.Temperature]
-        status += [p.container.value for p in ohm_status.CPU.Load]
-        status += [p.container.value for p in ohm_status.CPU.Clock]
-        status += [p.container.value for p in ohm_status.CPU.Power]
+        status += [p.value for p in ohm_status.CPU.Temperature]
+        status += [p.value for p in ohm_status.CPU.Load]
+        status += [p.value for p in ohm_status.CPU.Clock]
+        status += [p.value for p in ohm_status.CPU.Power]
         
         if self.show_status_to_title:
-            cpu_usage = ohm_status.CPU.Load[0].container.value
-            cpu_temp = ohm_status.CPU.Temperature[0].container.value
+            cpu_usage = ohm_status.CPU.Load[0].value
+            cpu_temp = ohm_status.CPU.Temperature[0].value
             title = f'CPU: {cpu_usage:>4.1f}%, Temp: {cpu_temp:>4.1f}°C'
             self.master.title(title)
         
-        sent, receive = self.network.get_sent_received()
-        _system = [
-            c_disk_usage(),
-            ohm_status.RAM.Load[0].container.value,
-            get_current_pids(),
-            sent,
-            receive
-        ]
+        _system = [c_disk_usage(),
+                   ohm_status.RAM.Load[0].value,
+                   get_current_pids(),
+                   *self.network()]
         status += _system
         
         return status
 
-    def determine_color(self, name: Name, value: Union[int, float, str]) -> str:
-        """
-        Set color code.
-
-        Args:
-            name (Name): Name object. shuold be in self.table_names.
-            value (Union[int, float, str]): value.
-
-        Returns:
-            str: color code.
-        """
-        if name.istag('Temperature'):
-            cl = set_temperature_color(value)
-        elif name.istag('Load') or name.istag('gpu_ram'):
-            cl = set_load_color(value)
-        elif name.istag('gpu_power'):
-            cl = set_nvgpu_power_color(value)
-        elif name.istag('gpu_fan'):
-            cl = set_nvgpu_fan_color()
-        elif name.istag('ac'):
-            cl = set_battery_color(name, value)
-        elif name.istag('system'):
-            cl = set_system_color(value)
-        else:
-            cl = default_color
-        
-        return cl
-
     def make_table(self) -> None:
-        """テーブルを作成"""
-        self.tree = ttk.Treeview(self.master, height=13, columns=(1,2))
+        """Create table."""
+        height = 14
+        if self.gpu3d:
+            height += 1
+        self.tree = ttk.Treeview(self.master, height=height, columns=(1,2))
 
-        self.tree.column('#0', width=self.width//2-20)
-        self.tree.column(1, width=self.width//2-50)
-        self.tree.column(2, width=50)
+        self.tree.column('#0', width=self.width//2-self._int_factor(20))
+        self.tree.column(1, width=self.width//2-self._int_factor(50))
+        self.tree.column(2, width=self._int_factor(50))
 
         self.tree.heading('#0', text='Name')
         self.tree.heading(1, text="Value")
         self.tree.heading(2, text="Unit")
 
-        status = self.get_full_status()
+        status = self.get_all_status()
 
         master_usage_id = ''
         master_power_id = ''
@@ -243,142 +245,56 @@ class MainWindow(ttk.Frame):
         self.data_table = {}
         
         for index, (name, value) in enumerate(zip(self.table_names, status)):
-            insert_kwg = dict(index='end', tags=index, text=name.name, values=(adjust_format(value), name.unit))
-            if self.cpu_temp_table.is_children(name):
-                id = self.tree.insert(master_temp_id, **insert_kwg)
-            elif self.cpu_load_table.is_children(name):
-                id = self.tree.insert(master_usage_id, **insert_kwg)
-            elif self.cpu_clock_table.is_children(name):
-                id = self.tree.insert(master_clock_id, **insert_kwg)
-            elif self.cpu_power_table.is_children(name):
-                id = self.tree.insert(master_power_id, **insert_kwg)
-            else:
-                id = self.tree.insert('', **insert_kwg)
+            vname = name.tostring()
             
-            if name.name == CPU_LOAD:
-                master_usage_id = id
-            elif name.name == CPU_POWER:
-                master_power_id = id
-            elif name.name == CPU_CLOCK:
-                master_clock_id = id
-            elif name.name == CPU_TEMP:
-                master_temp_id = id
+            insert_kwg = dict(index='end', tags=index, text=vname, values=(adjust_format(value), name.unit))
+            if self.cpu_temp_table.is_children(name):
+                id_ = self.tree.insert(master_temp_id, **insert_kwg)
+            elif self.cpu_load_table.is_children(name):
+                id_ = self.tree.insert(master_usage_id, **insert_kwg)
+            elif self.cpu_clock_table.is_children(name):
+                id_ = self.tree.insert(master_clock_id, **insert_kwg)
+            elif self.cpu_power_table.is_children(name):
+                id_ = self.tree.insert(master_power_id, **insert_kwg)
+            else:
+                id_ = self.tree.insert('', **insert_kwg)
+            
+            if vname == CPU_LOAD:
+                master_usage_id = id_
+            elif vname == CPU_POWER:
+                master_power_id = id_
+            elif vname == CPU_CLOCK:
+                master_clock_id = id_
+            elif vname == CPU_TEMP:
+                master_temp_id = id_
 
             if name.tag == 'network':
                 ins_value = value if not isinstance(value, str) else 0.0
             else:
                 ins_value = value
 
-            self.data_table[id] = dict(
+            self.data_table[id_] = dict(
                 name=name,
                 type_ = type(ins_value),
-                values = deque([0]*29+[ins_value], maxlen=30),
+                values=deque([0]*29+[ins_value], maxlen=30),
                 percentage_range = name.unit == '%' or name.unit == '°C')
-            self.id_list.append(id)
-            self.tree.tag_configure(tagname=index, foreground=self.determine_color(name, value))
+            self.id_list.append(id_)
+            self.tree.tag_configure(tagname=index, foreground=determine_color(name, value))
 
-        self.menu = tk.Menu(self.master, tearoff=False, foreground='white', background='white')
-        self.menu.add_command(
-            label='選択中のデータのグラフを表示',
-            command=self.create_graph_window,
-            state=tk.DISABLED,
-            foreground='#333333')
-        self.menu.add_command(label='ヘルプ', command=self.show_hint_message, foreground='#333333')
-        self.menu.add_separator()
-        self.menu.add_command(label='終了', command=self.app_exit, foreground='#333333')
+        # right-click menu
+        self.ttk_style.menu.add_command(label='選択中のデータのグラフを表示',
+                                        command=self.create_graph_window,
+                                        state=tk.DISABLED)
+        self.ttk_style.menu.add_command(label='ヘルプ', command=self.show_hint_message)
+        self.ttk_style.menu.add_separator()
+        self.ttk_style.menu.add_command(label='終了', command=self.app_exit)
+        self.ttk_style.menu.configure(font=('Yu Gothic UI', self._int_factor(11)))
 
-        self.tree.bind('<Button-3>', self.popup_event)
-        self.tree.pack()
-
-    def update(self) -> None:
-        """更新時の挙動"""
-        self.check_moveable()
-
-        status = self.get_full_status()
-        for index, (table_id, value) in enumerate(zip(self.id_list, status)):
-            self.tree.set(table_id, column=1, value=adjust_format(value))
-            self.tree.tag_configure(
-                tagname=index,
-                foreground=self.determine_color(self.table_names[index], value))
-
-            # TODO: make_tableと同じコードを書いているので関数でまとめる
-            if self.table_names[index].tag == 'network':
-                ins_value = value if not isinstance(value, str) else 0
-            else:
-                ins_value = value
-
-            self.data_table[table_id]['values'].append(ins_value)
-            # alert if battery is low or high
-            if self.use_battery_mode and index == 1: # BatteryLife
-                alert_on_balloontip(value, status[0])
-    
-        self.master.after(self.cycle, self.update)
-    
-    def create_graph_window(self, *args, **kwargs) -> None:
-        selected = self.tree.selection()
-        if has_mpl:
-            show_ids = []
-            for table_id in selected:
-                if self.data_table[table_id]['type_'] is not str:
-                    show_ids.append(table_id)
-            if show_ids:
-                create_graph(self, show_ids, ICON)
-        else:
-            info('matplotlibがインストールされていないため、グラフを表示できません。')
-
-    def popup_event(self, event: tk.Event) -> None:
-        if self.tree.selection():
-            self.menu.entryconfigure(0, state=tk.NORMAL)
-        else:
-            self.menu.entryconfigure(0, state=tk.DISABLED)
-        self.menu.tk_popup(event.x_root, event.y_root)
-
-    def app_exit(self, *args, **kwargs) -> None:
-        """プログラム終了"""
-        print('App exit.')
-        self.master.destroy()
-
-    def dump_current_status(self, *args, **kwargs) -> None:
-        """
-        各情報をjson形式で出力(full output)
-        """
-        status = self.ohm.curstatus()
-        print(status, flush=True)
-
-        _date = datetime.datetime.now().strftime('%Y_%m_%d')
-        fpath = os.path.join(TASKMGR_PATH, _date+'_dump.json')
-        add_summary = dict(recorded = _date)
-        
-        if self.use_battery_mode:
-            add_summary['Battery Status (all)'] = get_battery_status().tolist()
-        try:
-            with open(fpath, 'w') as f:
-                summary = dict(**status.todict(), **add_summary)
-                json.dump(summary, f, indent=4)
-        except PermissionError:
-            show_message_to_notification('保存に失敗しました。アクセスが拒否されました。')
-        else:
-            show_message_to_notification(f'ダンプファイルを{fpath}に保存しました。')
-
-    def show_hint_message(self, *args, **kwargs):
-        msg = ('コマンド:\n\n'
-            'Ctrl + Q ... アプリ終了\n'
-            'Ctrl + P ... アプリを最前面に固定 or 解除\n'
-            'Ctrl + H ... このヒント画面を表示\n'
-            'Ctrl + S ... ダンプファイルを作成\n'
-            'Ctrl + K ... ウィンドウを上端に移動\n'
-            'Ctrl + M ... ウィンドウを下端に移動\n'
-            'Ctrl + J ... ウィンドウを左端に移動\n'
-            'Ctrl + L ... ウィンドウを右端に移動\n'
-            'Ctrl + R ... ウィンドウを半透明化 or 解除\n'
-            'Ctrl + B ... 情報の更新速度を0.5s間隔に変更 / 1s間隔に戻す\n'
-            'Ctrl + T ... タイトルにCPU使用率/温度を表示 / 非表示\n\n')
-
-        print(msg)
-        info(msg)
+        self.tree.bind('<Button-3>', self.clicked)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     def set_position(self) -> None:
-        """位置をセットする"""
+        """Set position."""
         pos_w = self.window_width - self.width
         pos_h = self.window_height - self.height
         frame_border, border = borders()
@@ -386,7 +302,7 @@ class MainWindow(ttk.Frame):
             pos_w -= (frame_border.Width + border.Width)
         if not self.h_bind:
             pos_h -= (frame_border.Height + border.Height)
-        print(f'Geometry: `{self.width}x{self.height}+{pos_w}+{pos_h}`.')
+        logger.debug(f'Geometry: `{self.width}x{self.height}+{pos_w}+{pos_h}`.')
         self.master.geometry(f'{self.width}x{self.height}+{pos_w}+{pos_h}')
 
     def check_moveable(self):
@@ -405,79 +321,175 @@ class MainWindow(ttk.Frame):
         if move:
             self.set_position()
 
-    def move_u(self, *args, **kwargs) -> None:
-        """上へ"""
-        if self.h_bind:
-            return
-        self.window_height = self.height
-        self.h_bind = True
+    def update(self) -> None:
+        """Update table."""
+        self.check_moveable()
+        self.update_scales()
+        self.ttk_style.apply()
+
+        status = self.get_all_status()
+        for index, (table_id, value) in enumerate(zip(self.id_list, status)):
+            self.tree.set(table_id, column=1, value=adjust_format(value))
+            self.tree.tag_configure(
+                tagname=index,
+                foreground=determine_color(self.table_names[index], value))
+
+            if self.table_names[index].tag == 'network':
+                ins_value = value if not isinstance(value, str) else 0
+            else:
+                ins_value = value
+
+            self.data_table[table_id]['values'].append(ins_value)
+            # alert if battery is low or high
+            if self.use_battery_mode and index == 1: # BatteryLife
+                alert_on_balloontip(value, status[0])
+        self.master.after(self.cycle, self.update)
+
+    ###################################################################
+    #                          event handler                          #
+    ###################################################################
+
+    def create_graph_window(self, event: Optional[tk.Event] = None) -> None:
+        """
+        Create matplotlib window.
+        
+        Used: self.tree -> self.ttk_style.menu
+        """
+        show_ids = []
+        for table_id in self.tree.selection():
+            if self.data_table[table_id]['type_'] is not str:
+                show_ids.append(table_id)
+        if show_ids:
+            create_graph(self, show_ids, ICON)
+
+    def clicked(self, event: Optional[tk.Event] = None) -> None:
+        """
+        Clicked event.
+        
+        Used: self.tree
+        """
+        if self.tree.selection():
+            if all(self.data_table[table_id]['type_'] is str for table_id in self.tree.selection()):
+                self.ttk_style.menu.entryconfigure(0, state=tk.DISABLED, label='グラフ化できません')
+            else:
+                self.ttk_style.menu.entryconfigure(0, state=tk.NORMAL, label='選択中のデータのグラフを表示')
+        else:
+            self.ttk_style.menu.entryconfigure(0, state=tk.DISABLED, label='グラフが選択されていません')
+        self.ttk_style.menu.tk_popup(event.x_root, event.y_root)
+
+    def app_exit(self, event: Optional[tk.Event] = None) -> None:
+        """Close app."""
+        logger.debug('App exit.')
+        self.master.destroy()
+
+    def dump_current_status(self, event: Optional[tk.Event] = None) -> None:
+        """Dump current status."""
+        status = self.ohm()
+
+        _date = datetime.datetime.now().strftime('%Y_%m_%d')
+        fpath = os.path.join(TASKMGR_PATH, _date+'_dump.json')
+        add_summary = dict(recorded = _date)
+        
+        if self.use_battery_mode:
+            add_summary['Battery Status (all)'] = get_battery_status().tolist()
+        try:
+            with open(fpath, 'w') as f:
+                summary = dict(**status.todict(), **add_summary)
+                json.dump(summary, f, indent=4)
+        except PermissionError:
+            show_message_to_notification('保存に失敗しました。アクセスが拒否されました。')
+        else:
+            show_message_to_notification(f'データファイルを{fpath}に保存しました。')
+
+    def show_hint_message(self, event: Optional[tk.Event] = None):
+        msg = ('コマンド:\n\n'
+            'Ctrl + Q ... アプリ終了\n'
+            'Ctrl + P ... アプリを最前面に固定 or 解除\n'
+            'Ctrl + H ... このヒント画面を表示\n'
+            'Ctrl + S ... ダンプファイルを作成\n'
+            'Ctrl + K ... ウィンドウを上端に移動\n'
+            'Ctrl + M ... ウィンドウを下端に移動\n'
+            'Ctrl + J ... ウィンドウを左端に移動\n'
+            'Ctrl + L ... ウィンドウを右端に移動\n'
+            'Ctrl + R ... ウィンドウを半透明化 or 解除\n'
+            'Ctrl + B ... 情報の更新速度を0.5s間隔に変更 / 1s間隔に戻す\n'
+            'Ctrl + T ... タイトルにCPU使用率/温度を表示 / 非表示\n\n')
+        info(msg)
+
+    def move(self, direction: str, event: Optional[tk.Event] = None) -> None:
+        if direction == 'up':
+            if self.h_bind:
+                return
+            self.window_height = self.height
+            self.h_bind = True
+        elif direction == 'down':
+            if not self.h_bind:
+                return
+            _, self.window_height = workingarea()
+            self.h_bind = False
+        elif direction == 'left':
+            if self.w_bind:
+                return
+            self.window_width = self.width
+            self.w_bind = True
+        elif direction == 'right':
+            if not self.w_bind:
+                return
+            self.window_width, _ = workingarea()
+            self.w_bind = False
         self.set_position()
 
-    def move_d(self, *args, **kwargs) -> None:
-        """下へ"""
-        if not self.h_bind:
-            return
-        _, self.window_height = workingarea()
-        self.h_bind = False
-        self.set_position()
+    move_u = partialmethod(move, 'up')
+    move_d = partialmethod(move, 'down')
+    move_l = partialmethod(move, 'left')
+    move_r = partialmethod(move, 'right')
 
-    def move_l(self, *args, **kwargs) -> None:
-        """左へ"""
-        if self.w_bind:
-            return
-        self.window_width = self.width
-        self.w_bind = True
-        self.set_position()
-
-    def move_r(self, *args, **kwargs) -> None:
-        """右へ"""
-        if not self.w_bind:
-            return
-        self.window_width, _ = workingarea()
-        self.w_bind = False
-        self.set_position()
-
-    def switch_topmost(self, *args, **kwargs) -> None:
-        """ウィンドウ最前面固定の有効/無効"""
+    def switch_topmost(self, event: Optional[tk.Event] = None) -> None:
         self.showtop = not self.showtop
-        print('Topmost:', self.showtop)
+        logger.debug(f'Topmost: {self.showtop}')
         self.master.attributes("-topmost", self.showtop)
 
-    def switch_window_transparency(self, *args, **kwargs):
+    def switch_window_transparency(self, event: Optional[tk.Event] = None):
         if self.transparent:
             alpha = 1.0
         else:
             alpha = 0.5
         self.transparent = not self.transparent
-        print('Transparent:', self.transparent)
+        logger.debug(f'Transparent: {self.transparent}')
         self.master.attributes("-alpha",alpha)
 
-    def switch_cycle(self, *args, **kwargs):
+    def switch_cycle(self, event: Optional[tk.Event] = None):
         if self.cycle == 1000:
             self.cycle = 500
         else:
             self.cycle = 1000
-        print('Cycle: {:.1f}s'.format(self.cycle/1000))
+        logger.debug(f'Cycle: {self.cycle/1000:.1f}s')
 
-    def switch_title(self, *args, **kwargs):
+    def switch_title(self, event: Optional[tk.Event] = None):
         if self.show_status_to_title:
             self.master.title(PYTASKMGR)
         self.show_status_to_title = not self.show_status_to_title
-        print('Show Status to Title:', self.show_status_to_title)
+        logger.debug(f'Show status to title: {self.show_status_to_title}')
 
 
 def start() -> None:
+    parser = argparse.ArgumentParser(description=PYTASKMGR)
+    parser.add_argument('-g', '--gpu3d', action='store_true', help='GPU使用率(3d)を有効にします。')
+    parser.add_argument('-t', '--theme', type=str,
+                        choices=['dark', 'light', 'system'], default='system',
+                        help='テーマを指定します。systemはOSのデフォルトテーマを使用します。デフォルトはsystemです。')
+    
+    args = parser.parse_args()
     with OpenHardwareMonitor() as ohm:
         try:
             window = tk.Tk()
-            MainWindow(window, 340, 272, ohm)
+            MainWindow(window, 340, 258, ohm, gpu3d = args.gpu3d, theme=args.theme)
             window.mainloop()
         except:
             msg = traceback.format_exc()
             show_message_to_notification(msg)
-            print(msg)
+            logger.error(msg)
 
 
 if __name__ == '__main__':
-    check_admin()
     start()

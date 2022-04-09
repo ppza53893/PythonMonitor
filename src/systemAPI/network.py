@@ -1,8 +1,8 @@
 import time
 from types import ModuleType
-from typing import Tuple, Union, Optional
+from typing import Tuple, Union, Optional, Callable
 
-from ..utils import NetworkInterface, StatusContainer
+from src.utils import NetworkInterface, StatusContainer
 
 __all__ = ["Network"]
 NOT_CONNECTED = ['Not connected', 'Not connected']
@@ -84,3 +84,5 @@ class Network():
             self._sent = current_sent
             self._received = current_received
             return [sent, received]
+
+    __call__: Callable[[], Union[Tuple[float, float], Tuple[str, str]]] = get_sent_received

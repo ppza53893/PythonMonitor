@@ -10,6 +10,7 @@ GPU_FAN = 'GPU Fan'
 GPU_POWER = 'GPU Power'
 GPU_RAM = 'GPU RAM Usage'
 GPU_TEMP = 'GPU Temperature'
+GPU_LOAD = 'GPU Usage (3D)'
 
 CPU_TEMP = 'CPU Temperature'
 CPU_LOAD = 'CPU Usage'

@@ -39,11 +39,15 @@ class StatusContainer:
         try:
             return self._holder[name]
         except KeyError:
-            raise AttributeError(f'"{self.__class__.__name__}" object has no attribute "{name}".')
+            try:
+                # container.value
+                return getattr(self._holder['container'], name)
+            except:
+                raise AttributeError(f'"{self.__class__.__name__}" object has no attribute "{name}".')
 
     @property
     def isempty(self) -> bool:
-        return len(self) == 0
+        return len(self._holder) == 0
 
     def _setname(self, name, index) -> str:
         if not hasattr(self, name):
@@ -63,13 +67,15 @@ class StatusContainer:
             value = s
         self._holder[self._setname(name, 1)] = value
 
+    def clear(self):
+        self._holder.clear()
+
     def to_(self, value, attr: str):
         assert attr in ['tolist', 'todict']
         if not isinstance(value, StatusContainer):
             return value
         return getattr(value, attr)()
 
-    # XXX: never used?
     def tolist(self) -> List[Any]:
         """
         Convert to StatusContainer to list.

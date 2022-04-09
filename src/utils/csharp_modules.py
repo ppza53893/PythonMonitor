@@ -1,4 +1,4 @@
-from .pythonnet import import_module
+from src.utils.pythonnet import import_module
 
 __all__ = [
     'dispose',
@@ -19,10 +19,12 @@ __all__ = [
 
 
 System = import_module("System")
-Diagnostics = import_module("System.Diagnostics.Process", "System.Diagnostics")
+Diagnostics = import_module("System.Diagnostics.Process", module_name="System.Diagnostics")
 Management = import_module("System.Management")
 Forms = import_module("System.Windows.Forms")
-Container = import_module("System.ComponentModel.Primitives", "System.ComponentModel", 'Container')
+Container = import_module("System.ComponentModel.Primitives",
+                          module_name="System.ComponentModel",
+                          submodule_or_classes='Container')
 Icon, SystemIcons = import_module("System.Drawing", submodule_or_classes=["Icon", "SystemIcons"])
 NetworkInterface = import_module("System.Net.NetworkInformation", submodule_or_classes="NetworkInterface")
 
