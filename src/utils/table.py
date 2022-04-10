@@ -197,6 +197,8 @@ def set_battery_color(name: 'Name', value: Union[str, int]) -> str:
             return "#FFFF00" if ISDARK else "#AAAA00"
         elif value == 'Critical':
             return "#FF0000" if ISDARK else "#CC0000"
+        else:
+            return default_color
     else:
         return default_color
 
@@ -261,6 +263,7 @@ class StyleWatch():
         foreground: str
         background: str
         heading: str
+        disabled: str
 
     def __init__(self,
                  master: tk.Tk=None,
@@ -359,7 +362,7 @@ class StyleWatch():
             activebackground=self.colors.heading,
             activeforeground=self.colors.foreground,
             background=self.colors.background,
-            disabledforeground=self.colors.heading,
+            disabledforeground=self.colors.disabled,
             foreground=self.colors.foreground,
             )
     
@@ -376,10 +379,10 @@ class StyleWatch():
             isdarkmode = False
 
         if isdarkmode:
-            holder = self.ColorHolder("#ffffff", "#393939", "#707070")
+            holder = self.ColorHolder("#ffffff", "#393939", "#707070", "#a0a0a0")
             ISDARK = True
         else:
-            holder = self.ColorHolder("#000000", "#ffffff", "#CCCCCC")
+            holder = self.ColorHolder("#000000", "#ffffff", "#CCCCCC", "#e0e0e0")
             ISDARK = False
         default_color = holder.foreground
         return holder
