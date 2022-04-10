@@ -197,6 +197,8 @@ def set_battery_color(name: 'Name', value: Union[str, int]) -> str:
             return "#FFFF00" if ISDARK else "#AAAA00"
         elif value == 'Critical':
             return "#FF0000" if ISDARK else "#CC0000"
+        else:
+            return default_color
     else:
         return default_color
 
