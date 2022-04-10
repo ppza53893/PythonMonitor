@@ -53,12 +53,6 @@ def sensor_getvaluetoname(value: int) -> Tuple[str, str]:
             return k, sensortype_prefix[v]
 
 
-class ModeResult:
-    def __init__(self, battery: bool, gpu: bool):
-        self.battery = battery
-        self.gpu = gpu
-
-
 @dataclasses.dataclass
 class OpenHardwareMonitor:
     """

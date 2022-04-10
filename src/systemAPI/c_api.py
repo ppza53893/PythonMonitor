@@ -59,7 +59,6 @@ def getWindowDPI(handler: int, mode='MONITOR_DEFAULTTONEAREST'):
     return pX.value, pY.value
 
 
-getPrimaryWindowDPI = partial(getWindowDPI, mode='MONITOR_DEFAULTTOPRIMARY')
 getNearestWindowDPI = partial(getWindowDPI, mode='MONITOR_DEFAULTTONEAREST')
 
 
