@@ -1,6 +1,5 @@
 """PyTaskManager"""
 import argparse
-from cProfile import label
 import ctypes
 # to STA thread
 ctypes.windll.ole32.CoInitialize(None)
@@ -8,8 +7,10 @@ ctypes.windll.ole32.CoInitialize(None)
 import datetime
 import json
 import os
+import time
 import traceback
 from collections import deque
+from contextlib import contextmanager
 from functools import partialmethod
 from typing import List, Union, Optional
 
@@ -25,6 +26,50 @@ set_icon(ICON)
 
 
 class MainWindow(ttk.Frame):
+    class _TitleSwitcher:
+        __slots__ = ('_c', '_master', '_gpuenabled', '_batenabled', 'time')
+        def __init__(self, master: tk.Tk, gpuenabled: bool, batteryenabled: bool):
+            self._c = 0
+            self._master = master
+            self._gpuenabled = gpuenabled
+            self._batenabled = bool(batteryenabled)
+            self.time = None
+        
+        def tostring(self):
+            if self._c == 0:
+                return 'CPU/Temp'
+            elif self._c == 1:
+                return 'GPU'
+            elif self._c == 2:
+                return 'Battery'
+            elif self._c == 3:
+                return 'Delay'
+            elif self._c == 4:
+                return f'{PYTASKMGR}'
+        
+        @property
+        def mode(self):
+            return self._c
+        
+        def show(self, text: str):
+            if self._c != 4:
+                self._master.title(text)
+        
+        def switch(self):
+            self._c += 1
+            if self._c == 1 and not self._gpuenabled:
+                self._c += 1
+            if self._c == 2 and not self._batenabled:
+                self._c += 1
+            self._c = self._c % 5
+        
+        @contextmanager
+        def watch(self):
+            t1 = time.time()
+            yield
+            t2 = time.time()
+            self.time = t2 - t1
+
     def __init__(self,
                  master: tk.Tk,
                  width: int,
@@ -169,7 +214,8 @@ class MainWindow(ttk.Frame):
         self.id_list = []
         
         # title 
-        self.show_status_to_title = True
+        self.title_status = self._TitleSwitcher(self.master, self.gpu3d, self.use_battery_mode)
+        self.title_text = PYTASKMGR
 
     def _int_factor(self, value: Union[int, float]) -> int:
         return int(value * min(self.dpi_factors))
@@ -185,8 +231,7 @@ class MainWindow(ttk.Frame):
             self.master.call('tk', 'scaling', 1.0)
             self.master.resizable(width=True, height=True)
             self.master.geometry(f'{self.width}x{self.height}')
-            self.master.resizable(width=False, height=False)
-            
+            self.master.resizable(width=False, height=False)         
 
     def get_all_status(self) -> List[Union[str, int]]:
         """現在の状態を取得"""
@@ -195,6 +240,8 @@ class MainWindow(ttk.Frame):
         if self.use_battery_mode is not None:
             if self.use_battery_mode:
                 status = get_battery_status().tolist()
+                if self.title_status.mode == 2:
+                    self.title_text = f'Battery: {status[1]:.1f}%'
             else:
                 nvidia_smi_update()
                 status = [
@@ -208,17 +255,18 @@ class MainWindow(ttk.Frame):
             status = []
         if self.gpu3d:
             status += [self.gpu()]
+            if self.title_status.mode == 1:
+                self.title_text = f'GPU: {status[-1]:.1f}%'
 
         status += [p.value for p in ohm_status.CPU.Temperature]
         status += [p.value for p in ohm_status.CPU.Load]
         status += [p.value for p in ohm_status.CPU.Clock]
         status += [p.value for p in ohm_status.CPU.Power]
         
-        if self.show_status_to_title:
+        if self.title_status.mode == 0:
             cpu_usage = ohm_status.CPU.Load[0].value
             cpu_temp = ohm_status.CPU.Temperature[0].value
-            title = f'CPU: {cpu_usage:>4.1f}%, Temp: {cpu_temp:>4.1f}°C'
-            self.master.title(title)
+            self.title_text = f'CPU: {cpu_usage:>4.1f}%, Temp: {cpu_temp:>4.1f}°C'
         
         _system = [c_disk_usage(),
                    ohm_status.RAM.Load[0].value,
@@ -331,26 +379,35 @@ class MainWindow(ttk.Frame):
 
     def update(self) -> None:
         """Update table."""
-        self.check_moveable()
-        self.update_scales()
-        self.ttk_style.apply()
+        with self.title_status.watch():
+            self.check_moveable()
+            self.update_scales()
+            self.ttk_style.apply()
+            
+            status = self.get_all_status()
+        
+            for index, (table_id, value) in enumerate(zip(self.id_list, status)):
+                self.tree.set(table_id, column=1, value=adjust_format(value))
+                self.tree.tag_configure(
+                    tagname=index,
+                    foreground=determine_color(self.table_names[index], value))
 
-        status = self.get_all_status()
-        for index, (table_id, value) in enumerate(zip(self.id_list, status)):
-            self.tree.set(table_id, column=1, value=adjust_format(value))
-            self.tree.tag_configure(
-                tagname=index,
-                foreground=determine_color(self.table_names[index], value))
+                if self.table_names[index].tag == 'network':
+                    ins_value = value if not isinstance(value, str) else 0
+                else:
+                    ins_value = value
 
-            if self.table_names[index].tag == 'network':
-                ins_value = value if not isinstance(value, str) else 0
-            else:
-                ins_value = value
-
-            self.data_table[table_id]['values'].append(ins_value)
-            # alert if battery is low or high
-            if self.use_battery_mode and index == 1: # BatteryLife
-                alert_on_balloontip(value, status[0])
+                self.data_table[table_id]['values'].append(ins_value)
+                # alert if battery is low or high
+                if self.use_battery_mode and index == 1: # BatteryLife
+                    alert_on_balloontip(value, status[0])
+        
+        if self.title_status.mode == 3:
+            c = round(self.cycle/1000, 1)
+            self.title_text = f'Cycle: {c}s, Delay: {self.title_status.time:.3f}s'
+        # title
+        self.title_status.show(self.title_text)
+        
         self.master.after(self.cycle, self.update)
 
     ###################################################################
@@ -421,7 +478,8 @@ class MainWindow(ttk.Frame):
             'Ctrl + L ... ウィンドウを右端に移動\n'
             'Ctrl + R ... ウィンドウを半透明化 or 解除\n'
             'Ctrl + B ... 情報の更新速度を0.5s間隔に変更 / 1s間隔に戻す\n'
-            'Ctrl + T ... タイトルにCPU使用率/温度を表示 / 非表示\n\n')
+            'Ctrl + T ... タイトルのテキストを変更\n'
+            '                (CPU/温度, GPU使用率, バッテリー, 遅延、アプリ名)\n\n')
         info(msg)
 
     def move(self, direction: str, event: Optional[tk.Event] = None) -> None:
@@ -474,10 +532,11 @@ class MainWindow(ttk.Frame):
         logger.debug(f'Cycle: {self.cycle/1000:.1f}s')
 
     def switch_title(self, event: Optional[tk.Event] = None):
-        if self.show_status_to_title:
-            self.master.title(PYTASKMGR)
-        self.show_status_to_title = not self.show_status_to_title
-        logger.debug(f'Show status to title: {self.show_status_to_title}')
+        self.title_status.switch()
+        if self.title_status.mode == 4:
+            self.title_text = PYTASKMGR
+            self.master.title(self.title_text)
+        logger.debug(f'Show status to title: {self.title_status.tostring()}')
 
 
 def start() -> None:
