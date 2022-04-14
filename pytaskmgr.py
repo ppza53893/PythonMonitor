@@ -33,7 +33,7 @@ class MainWindow(ttk.Frame):
             self._master = master
             self._gpuenabled = gpuenabled
             self._batenabled = bool(batteryenabled)
-            self.time = None
+            self._time = None
         
         def tostring(self):
             if self._c == 0:
@@ -48,8 +48,12 @@ class MainWindow(ttk.Frame):
                 return f'{PYTASKMGR}'
         
         @property
-        def mode(self):
+        def mode(self) -> int:
             return self._c
+        
+        @property
+        def time(self) -> float:
+            return self._time
         
         def show(self, text: str):
             if self._c != 4:
@@ -68,7 +72,7 @@ class MainWindow(ttk.Frame):
             t1 = time.time()
             yield
             t2 = time.time()
-            self.time = t2 - t1
+            self._time = t2 - t1
 
     def __init__(self,
                  master: tk.Tk,
