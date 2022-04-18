@@ -27,7 +27,7 @@ set_icon(ICON)
 
 class MainWindow(ttk.Frame):
     class _TitleSwitcher:
-        __slots__ = ('_c', '_master', '_gpuenabled', '_batenabled', 'time')
+        __slots__ = ('_c', '_master', '_gpuenabled', '_batenabled', '_time')
         def __init__(self, master: tk.Tk, gpuenabled: bool, batteryenabled: bool):
             self._c = 0
             self._master = master
@@ -121,6 +121,7 @@ class MainWindow(ttk.Frame):
         self.master.bind(ctrl.r, self.switch_window_transparency)
         self.master.bind(ctrl.b, self.switch_cycle)
         self.master.bind(ctrl.t, self.switch_title)
+        self.master.bind(ctrl.g, self.debug)
         self.master.resizable(width=False, height=False)
 
         # テーブル作成
@@ -149,6 +150,7 @@ class MainWindow(ttk.Frame):
         else:
             self.dpi_factors = (1,1)
             self.current_dpi = 96
+        self.taskheight = getTaskBarHeight(self.master.winfo_id())
 
         if self.use_battery_mode is not None:
             if self.use_battery_mode:
@@ -176,7 +178,7 @@ class MainWindow(ttk.Frame):
         # gpus
         if self.gpu3d:
             self.gpu = NetGPU()
-            self.gpu.setup()
+            #self.gpu.setup()
             self.table_names.append(Name(GPU_LOAD, tag='gpu_load', unit='%'))
             self.height += self._int_factor(20)
         
@@ -232,7 +234,7 @@ class MainWindow(ttk.Frame):
             self.ttk_style.dpi_factor = min(self.dpi_factors)
             self.ttk_style.rescale()
             self.ttk_style.apply(force = True)
-            self.master.call('tk', 'scaling', 1.0)
+            self.taskheight = getTaskBarHeight(self.master.winfo_id())
             self.master.resizable(width=True, height=True)
             self.master.geometry(f'{self.width}x{self.height}')
             self.master.resizable(width=False, height=False)         
@@ -248,35 +250,34 @@ class MainWindow(ttk.Frame):
                     self.title_text = f'Battery: {status[1]:.1f}%'
             else:
                 nvidia_smi_update()
+                nv = ohm_status.GpuNvidia
                 status = [
-                    ohm_status.GpuNvidia.Fan[0].value,
-                    ohm_status.GpuNvidia.Power[0].value,
-                    ohm_status.GpuNvidia.SmallData[1].value \
-                        / ohm_status.GpuNvidia.SmallData[2].value * 100,
-                    ohm_status.GpuNvidia.Temperature[0].value,
+                    nv.Fan[0].value,
+                    nv.Power[0].value,
+                    nv.SmallData[1].value / nv.SmallData[2].value * 100,
+                    nv.Temperature[0].value,
                 ]
         else:
             status = []
         if self.gpu3d:
-            status += [self.gpu()]
+            status.append(self.gpu())
             if self.title_status.mode == 1:
                 self.title_text = f'GPU: {status[-1]:.1f}%'
 
-        status += [p.value for p in ohm_status.CPU.Temperature]
-        status += [p.value for p in ohm_status.CPU.Load]
-        status += [p.value for p in ohm_status.CPU.Clock]
-        status += [p.value for p in ohm_status.CPU.Power]
+        status.extend([p.value for p in ohm_status.CPU.Temperature])
+        status.extend([p.value for p in ohm_status.CPU.Load])
+        status.extend([p.value for p in ohm_status.CPU.Clock])
+        status.extend([p.value for p in ohm_status.CPU.Power])
         
         if self.title_status.mode == 0:
             cpu_usage = ohm_status.CPU.Load[0].value
             cpu_temp = ohm_status.CPU.Temperature[0].value
             self.title_text = f'CPU: {cpu_usage:>4.1f}%, Temp: {cpu_temp:>4.1f}°C'
-        
-        _system = [c_disk_usage(),
-                   ohm_status.RAM.Load[0].value,
-                   get_current_pids(),
-                   *self.network()]
-        status += _system
+
+        status.extend([c_disk_usage(),
+                       ohm_status.RAM.Load[0].value,
+                       get_current_pids(),
+                       *self.network()])
         
         return status
 
@@ -355,13 +356,12 @@ class MainWindow(ttk.Frame):
 
     def set_position(self) -> None:
         """Set position."""
-        pos_w = self.window_width - self.width
+        pos_w = self.window_width - self.width - self.master.winfo_rootx() + self.master.winfo_x()
         pos_h = self.window_height - self.height
-        frame_border, border = borders()
-        if not self.w_bind:
-            pos_w -= (frame_border.Width + border.Width)
+        if self.w_bind:
+            ...
         if not self.h_bind:
-            pos_h -= (frame_border.Height + border.Height)
+            pos_h -= self.taskheight
         logger.debug(f'Geometry: `{self.width}x{self.height}+{pos_w}+{pos_h}`.')
         self.master.geometry(f'{self.width}x{self.height}+{pos_w}+{pos_h}')
 
@@ -383,13 +383,15 @@ class MainWindow(ttk.Frame):
 
     def update(self) -> None:
         """Update table."""
-        with self.title_status.watch():
-            self.check_moveable()
-            self.update_scales()
-            self.ttk_style.apply()
-            
-            status = self.get_all_status()
+        self.check_moveable()
+        self.update_scales()
+        self.ttk_style.apply()
         
+        with self.title_status.watch():
+            status = self.get_all_status()
+        data_delay = self.title_status.time
+
+        with self.title_status.watch():
             for index, (table_id, value) in enumerate(zip(self.id_list, status)):
                 self.tree.set(table_id, column=1, value=adjust_format(value))
                 self.tree.tag_configure(
@@ -407,8 +409,7 @@ class MainWindow(ttk.Frame):
                     alert_on_balloontip(value, status[0])
         
         if self.title_status.mode == 3:
-            c = round(self.cycle/1000, 1)
-            self.title_text = f'Cycle: {c}s, Delay: {self.title_status.time:.3f}s'
+            self.title_text = f'Delay(data/table): {data_delay:.3f}/{self.title_status.time:.3f}s'
         # title
         self.title_status.show(self.title_text)
         
@@ -417,6 +418,9 @@ class MainWindow(ttk.Frame):
     ###################################################################
     #                          event handler                          #
     ###################################################################
+
+    def debug(self, event: Optional[tk.Event] = None):
+        pass
 
     def create_graph_window(self, event: Optional[tk.Event] = None) -> None:
         """
@@ -495,7 +499,7 @@ class MainWindow(ttk.Frame):
         elif direction == 'down':
             if not self.h_bind:
                 return
-            _, self.window_height = workingarea()
+            self.window_height = self.master.winfo_screenheight()
             self.h_bind = False
         elif direction == 'left':
             if self.w_bind:
@@ -505,7 +509,7 @@ class MainWindow(ttk.Frame):
         elif direction == 'right':
             if not self.w_bind:
                 return
-            self.window_width, _ = workingarea()
+            self.window_width = self.master.winfo_screenwidth()
             self.w_bind = False
         self.set_position()
 

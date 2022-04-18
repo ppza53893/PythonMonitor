@@ -5,9 +5,8 @@ import sys
 import time
 from typing import Union
 
-from src.utils.csharp_modules import Diagnostics
+from src.utils.csharp_modules import Diagnostics, System
 from src.utils.pythonnet import import_module
-from src.utils.task import logger
 
 __all__ = ['nvidia_smi_update',
            'is_nvidia_smi_available',
@@ -82,32 +81,63 @@ def gpu_fan_speed() -> Union[float, str]:
     return GPU_FAN_SPEED
 
 
-class NetGPU:
-    """
-    Get GPU usage (engtype_3D)
-    """
+class DLL_NetGPU:
     def __init__(self):
+        self.gpu = import_module('./src/systemAPI/dll/GPUUsage.dll',
+                                 'GPUUsage', 'GPU')()
+
+    def __call__(self):
+        return self.gpu.Usage()
+
+
+class PY_NetGPU:
+    def __init__(self):
+        # List
         List = import_module('System.Collections',
                              module_name='System.Collections.Generic',
                              submodule_or_classes='List')
+        PerformanceCounter = Diagnostics.PerformanceCounter
         category = Diagnostics.PerformanceCounterCategory('GPU Engine')
-        self._status = List[Diagnostics.PerformanceCounter]()
+        
+        # pythonnet does not support import extension
+        # https://stackoverflow.com/questions/35148789/how-to-use-linq-in-python-net
+
+        self._action = import_module('System', submodule_or_classes='Action')[PerformanceCounter]
+        self._status = List[PerformanceCounter]()
         self._init = False
+        self._wrap_func = self._action(self._collect)
+        self._result = 0.
         
         for cat_name in category.GetInstanceNames():
             if re.findall(r'engtype_3D', cat_name):
                 self._status.Add(category.GetCounters(cat_name)[-1])
-    
-    def setup(self):
-        _ = [x.NextValue() for x in self._status]
+        self._setup()
+
+    def _collect(self, x):
+        try:
+            x = x.NextValue()
+        except System.InvalidOperationException:
+            pass
+        else:
+            self._result += x
+
+    def _setup(self):
+        f = self._action(lambda x: x.NextValue())
+        self._status.ForEach(f)
         time.sleep(1)
         self._init = True
-        logger.debug('GPU usage initialized')
     
     def __call__(self) -> float:
-        if not self._init:
-            self.setup()
-        return sum(gpu.NextValue() for gpu in self._status)
+        self._result = 0.
+        self._status.ForEach(self._wrap_func)
+        return self._result
+
+
+def NetGPU():
+    if os.path.exists('./src/systemAPI/dll/GPUUsage.dll'):
+        return DLL_NetGPU()
+    else:
+        return PY_NetGPU()
 
 
 if __name__ == '__main__':

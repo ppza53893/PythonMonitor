@@ -4,7 +4,7 @@ from functools import partial
 
 
 AWARENESS_OK = False
-
+# TODO: Class
 
 class PROCESS_DPI_AWARENESS:
     """
@@ -18,6 +18,28 @@ class PROCESS_DPI_AWARENESS:
 dwFlags_dict = {"MONITOR_DEFAULTTONEAREST": 2,
                 "MONITOR_DEFAULTTONULL": 0,
                 "MONITOR_DEFAULTTOPRIMARY": 1}
+
+
+class RECT(ctypes.Structure):
+    _fields_ = [("left", wintypes.LONG),
+                ("top", wintypes.LONG),
+                ("right", wintypes.LONG),
+                ("bottom", wintypes.LONG)]
+
+
+class tagMONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD),
+                ("rcMonitor", RECT),
+                ("rcWork", RECT),
+                ("dwFlags", wintypes.DWORD)]
+
+
+def tagMONITORINFO_init():
+    monitorinfo = tagMONITORINFO()
+    monitorinfo.cbSize = ctypes.sizeof(monitorinfo)
+    monitorinfo.rcMonitor = RECT()
+    monitorinfo.rcWork = RECT()
+    return monitorinfo
 
 
 def _setDpiAwareness():
@@ -36,7 +58,6 @@ def _GetDpiForMonitor(hmonitor: int, dpiType: int, dpix: pointer, dpiy: pointer)
     ctypes.windll.shcore.GetDpiForMonitor(hmonitor, dpiType, dpix, dpiy)
 
 
-
 def _check_admin():
     from src.systemAPI.win_forms import error
     from src.utils.task import logger
@@ -48,14 +69,25 @@ def _check_admin():
         logger.debug('Admin -> ok.')
 
 
+def getTaskBarHeight(handler: int) -> int:
+    hwnd = wintypes.HWND(handler)
+    hmonitor = _MonitorFromWindow(hwnd, dwFlags_dict['MONITOR_DEFAULTTONEAREST'])
+    monitorinfo = tagMONITORINFO_init()
+    ctypes.windll.user32.GetMonitorInfoW(hmonitor, ctypes.byref(monitorinfo))
+    
+    return monitorinfo.rcMonitor.bottom - monitorinfo.rcWork.bottom
+
+
 def getWindowDPI(handler: int, mode='MONITOR_DEFAULTTONEAREST'):
     _setDpiAwareness()
-    hwnd = wintypes.HWND(handler)       
+    hwnd = wintypes.HWND(handler)
     hmonitor = _MonitorFromWindow(hwnd, dwFlags_dict[mode])
     
     pX, pY = wintypes.UINT(), wintypes.UINT()
     
     _GetDpiForMonitor(hmonitor, 0, pointer(pX), pointer(pY))
+    monitorinfo = tagMONITORINFO()
+    ctypes.windll.user32.GetMonitorInfoW(hmonitor, ctypes.byref(monitorinfo))
     return pX.value, pY.value
 
 
